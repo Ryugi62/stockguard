@@ -30,6 +30,12 @@ StockGuard is a small safety layer that answers one question before any tokenize
 - Given session `closed` and premium +2.5% with threshold 1%, when a BUY is checked, then verdict = WARN ("You would pay 2.5% above the reference price while the US market is closed").
 - Given multiplier 10 and quantity 1 token, then `share_equivalent` = 10.
 - Given status `TRADING` in a regular session and premium within threshold, then verdict = ALLOW.
+- Given per-asset session `offhours` (or pre/post/overnight) while the market-wide session is `closed`, then verdict = WARN ("Outside regular US hours").
+- Given an on-chain totalSupply of 220.99 tokens and a BUY of 15 tokens, then verdict = WARN ("Thin market — 6.8% of all tokens").
+- Given a USD order size, then token quantity = USD ÷ per-token price (never per-share price).
+
+- S6: Every verdict carries a 0–100 risk score so WARNs can be ranked (pause/halt = 100).
+- S7: On-chain cross-check: token `totalSupply` from the BSC contract vs API `circulatingSupply`; mismatch >0.1% is reported.
 
 ## Non-goals
 - No trading strategy, no PnL claims, no perps.

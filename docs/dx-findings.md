@@ -29,9 +29,14 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 - Of the 31 `offhours` tokens, 18 carry a stock price that is **not** derived from the token price (an independent but stale quote), while the other 440 tokens carry either a derived price (F1) or `null`.
 - A client cannot tell "live", "stale but real" and "derived" apart without re-doing the arithmetic. A `referenceSource: live | last_close | derived` field would remove the guesswork.
 
-## F7. Token K-Line volume is always "0"
+## F7. Token K-Line volume is always "0"  (reproduce: `PYTHONPATH=src python3 -m stockguard kline NFLX --limit 10`, fixture `fixtures/kline_nflx_1d.json`)
 - `dex/market/token/kline/ai?interval=1d&limit=10` for NFLXon, AAPLon, TSLAon, NVDAon, SPYon, QQQon, KLACon, ENLVon, MSTRon, COINon: every one of the 100 daily candles has volume `"0"`, while open/high/low/close move.
 - Either the field is not populated for RWA tokens or the candles are not trade-derived. In both cases a client cannot use this endpoint to judge on-chain liquidity, which is exactly what a pre-trade check needs.
+
+## F8. On-chain supply matches the API (a positive check)
+- `totalSupply()` read directly from the NFLXon contract over public BSC RPC = 220.9909 tokens, equal to the API `circulatingSupply`. Total value on BNB Chain ≈ $148k, so a $20k order is ~13% of every NFLXon token in existence — StockGuard now warns on that ("Thin market").
+
+Reading guide for the report: F1, F2 and F6 are one theme — **how far can a client trust the reference price** — and lead to one request (a `referenceSource` field + `offhours` in the enum).
 
 ## F4. One entry in the stock list has no symbol in the dynamic endpoint
 - `list/ai?type=1` (stocks) includes USDY (`0x608593d17a2decbbc4399e4185be4922f97ed32e`). `dynamic/ai` for it returns no `symbol`/`ticker`, `marketStatus: regular`, `reasonCode: TRADING` on a Saturday.

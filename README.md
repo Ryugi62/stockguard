@@ -14,7 +14,7 @@ It ships three ways:
 | MCP tool `check_tokenized_stock_trade` | LLM agents | `python3 -m stockguard mcp` (stdio) |
 | Python library / CLI | trading bots | `python3 -m stockguard check NFLX BUY 1` |
 
-Run from the repo root with `PYTHONPATH=src`. It needs Python ≥3.9 and the standard library only. There are no API keys and no wallet, because StockGuard never signs anything.
+Install with `pip install -e .` (then just `stockguard check NFLX --usd 1000`), or run from the repo root with `PYTHONPATH=src python3 -m stockguard …`. It needs Python ≥3.9 and the standard library only. There are no API keys and no wallet, because StockGuard never signs anything.
 
 ## What it checks (domain rules, `src/stockguard/domain/guard.py`)
 
@@ -24,6 +24,8 @@ Run from the repo root with `PYTHONPATH=src`. It needs Python ≥3.9 and the sta
 - **Multiplier ≠ 1** → `WARN` with the real share count ("1 token = 10 shares")
 - **Premium/discount** against the independent stock price → `WARN` above a threshold (default 1%)
 - **No independent stock price**, because the API quotes `token price ÷ multiplier` as the stock price → `WARN` ("any premium is invisible")
+- **Thin market**: the order is >1% of all tokens that exist on BNB Chain (`totalSupply()` read from the contract over public BSC RPC) → `WARN`
+- Every verdict carries a **risk score 0–100** so warnings can be ranked; orders can be sized in **dollars** and StockGuard returns the correct token quantity
 
 ## What we found on live data (2026-10-03, 458 BSC tokens, scan in 7.3 s)
 
@@ -53,7 +55,7 @@ StockGuard reads and judges; it does not trade. The guarded-trade flow (StockGua
 ## Tests
 
 ```
-python3 -m pytest -q      # 29 tests, offline, fixtures from real responses in fixtures/
+python3 -m pytest -q      # 34 tests, offline, fixtures from real responses in fixtures/
 ```
 
 ## Data source
