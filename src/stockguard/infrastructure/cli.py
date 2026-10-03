@@ -5,8 +5,13 @@ import os
 import sys
 import time
 
-from stockguard.adapters.binance_rwa import RwaClient
-from stockguard.application.service import Guard
+from stockguard.adapters.binance_rwa import RwaClient, RwaError
+from stockguard.adapters.mapping import to_snapshot
+from stockguard.application.service import Guard, TickerNotFound
+
+
+def build_guard() -> Guard:
+    return Guard(RwaClient(), to_snapshot)
 
 
 def main(argv=None):
@@ -24,9 +29,17 @@ def main(argv=None):
     rp = sub.add_parser("replay", help="Dollar error of a naive 1-token-=-1-share bot on a scan file")
     rp.add_argument("scan_file"); rp.add_argument("--budget", type=float, default=1000.0)
     a = p.parse_args(argv)
-    guard = Guard(RwaClient())
+    guard = build_guard()
     if a.cmd == "check":
-        print(json.dumps(guard.check(a.ticker, a.side, a.qty, a.threshold), indent=2))
+        try:
+            print(json.dumps(guard.check(a.ticker, a.side, a.qty, a.threshold), indent=2))
+        except TickerNotFound as e:
+            hint = f" Did you mean: {', '.join(e.suggestions)}?" if e.suggestions else ""
+            sys.exit(f"No tokenized stock on BNB Chain matches '{e.query}'.{hint}")
+        except ValueError as e:
+            sys.exit(f"Invalid order: {e}")
+        except RwaError as e:
+            sys.exit(f"Market data unavailable right now: {e}")
     elif a.cmd == "scan":
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
         t0, n, bad, inc = time.time(), 0, 0, 0

@@ -19,5 +19,8 @@ class FakeClient:
         if address.lower() == "0x7048f5227b032326cc8dbc53cf3fddd947a2c757":
             return load("dynamic_nflx_weekend.json")
         raise RuntimeError("no fixture")
+    def meta(self, address, chain_id="56"):
+        return {"name": "Netflix (Ondo)", "companyInfo": {"companyName": "NetFlix Inc"},
+                "dailyAttestationReports": "/images/x/daily.pdf"}
 
 

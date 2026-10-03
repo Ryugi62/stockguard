@@ -3,25 +3,29 @@ import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import asdict
-from typing import Dict, Iterable, List, Optional, Protocol
+from typing import Callable, Dict, Iterable, List, Optional, Protocol
 
-from stockguard.adapters.mapping import to_snapshot
 from stockguard.domain.guard import Snapshot, Verdict, check_trade, find_inconsistencies
+
+ToSnapshot = Callable[[Dict, Optional[Dict]], Snapshot]
 
 
 class RwaPort(Protocol):
     def list_tokens(self, chain_id: str = "56") -> List[Dict]: ...
     def market_status(self) -> Dict: ...
     def dynamic(self, address: str, chain_id: str = "56") -> Dict: ...
+    def meta(self, address: str, chain_id: str = "56") -> Dict: ...
 
 
 class TickerNotFound(KeyError):
-    pass
+    def __init__(self, query: str, suggestions: Optional[List[str]] = None):
+        super().__init__(query)
+        self.query, self.suggestions = query, suggestions or []
 
 
 class Guard:
-    def __init__(self, client: RwaPort, chain_id: str = "56", list_ttl: float = 600.0):
-        self.client, self.chain_id, self.list_ttl = client, chain_id, list_ttl
+    def __init__(self, client: RwaPort, to_snapshot: ToSnapshot, chain_id: str = "56", list_ttl: float = 600.0):
+        self.client, self.to_snapshot, self.chain_id, self.list_ttl = client, to_snapshot, chain_id, list_ttl
         self._tokens: Optional[List[Dict]] = None
         self._tokens_at = 0.0
 
@@ -37,16 +41,33 @@ class Guard:
             if q in (str(t.get("ticker", "")).lower(), str(t.get("symbol", "")).lower(),
                      str(t.get("contractAddress", "")).lower()):
                 return t
-        raise TickerNotFound(query)
+        import difflib
+        names = [str(t.get("ticker", "")) for t in self.tokens()]
+        raise TickerNotFound(query, difflib.get_close_matches(query.upper(), names, n=3, cutoff=0.6))
 
     def snapshot(self, query: str) -> Snapshot:
         t = self.resolve(query)
-        return to_snapshot(self.client.dynamic(t["contractAddress"], self.chain_id), self.client.market_status())
+        return self.to_snapshot(self.client.dynamic(t["contractAddress"], self.chain_id), self.client.market_status())
 
     def check(self, query: str, side: str = "BUY", token_qty: float = 1.0, premium_threshold: float = 0.01) -> Dict:
-        s = self.snapshot(query)
+        t = self.resolve(query)
+        s = self.to_snapshot(self.client.dynamic(t["contractAddress"], self.chain_id), self.client.market_status())
         v = check_trade(s, side.upper(), token_qty, premium_threshold)
-        return render(s, v, side.upper(), token_qty)
+        out = render(s, v, side.upper(), token_qty)
+        out["contract"] = t["contractAddress"]
+        out.update(self._issuer_info(t["contractAddress"]))
+        return out
+
+    def _issuer_info(self, address: str) -> Dict:
+        """Company name and the issuer's attestation reports (proof the token is backed). Optional: never fails a check."""
+        try:
+            m = self.client.meta(address, self.chain_id) or {}
+        except Exception:
+            return {}
+        base = "https://bin.bnbstatic.com"
+        return {"name": m.get("name"), "company": (m.get("companyInfo") or {}).get("companyName"),
+                "attestation_daily": base + m["dailyAttestationReports"] if m.get("dailyAttestationReports") else None,
+                "attestation_monthly": base + m["monthlyAttestationReports"] if m.get("monthlyAttestationReports") else None}
 
     def scan(self, workers: int = 8, limit: Optional[int] = None) -> Iterable[Dict]:
         market = self.client.market_status()
@@ -54,7 +75,7 @@ class Guard:
 
         def one(t):
             try:
-                s = to_snapshot(self.client.dynamic(t["contractAddress"], self.chain_id), market)
+                s = self.to_snapshot(self.client.dynamic(t["contractAddress"], self.chain_id), market)
                 v = check_trade(s, "BUY", 1.0)
                 rec = render(s, v, "BUY", 1.0)
                 rec["inconsistencies"] = find_inconsistencies(s)

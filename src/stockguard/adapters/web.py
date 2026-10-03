@@ -36,8 +36,9 @@ def make_handler(guard):
                     return self._json(200, hit[1])
                 try:
                     r = guard.check(key[0], key[1], float(key[2]))
-                except TickerNotFound:
-                    return self._json(404, {"error": f"No tokenized stock found for '{key[0]}'"})
+                except TickerNotFound as e:
+                    hint = f" Did you mean {', '.join(e.suggestions)}?" if e.suggestions else ""
+                    return self._json(404, {"error": f"No tokenized stock found for '{key[0]}'.{hint}"})
                 except ValueError as e:
                     return self._json(400, {"error": str(e)})
                 except Exception as e:

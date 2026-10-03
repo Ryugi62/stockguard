@@ -1,3 +1,4 @@
+from stockguard.adapters.mapping import to_snapshot
 import io, json
 from stockguard.adapters.mcp_stdio import run
 from stockguard.application.service import Guard
@@ -13,7 +14,7 @@ def test_mcp_roundtrip():
          "params": {"name": "check_tokenized_stock_trade", "arguments": {"ticker": "NFLX", "token_qty": 1}}},
     ]) + "\n")
     fout = io.StringIO()
-    run(Guard(FakeClient()), fin, fout)
+    run(Guard(FakeClient(), to_snapshot), fin, fout)
     out = [json.loads(l) for l in fout.getvalue().splitlines()]
     assert [o["id"] for o in out] == [1, 2, 3]
     payload = json.loads(out[2]["result"]["content"][0]["text"])
