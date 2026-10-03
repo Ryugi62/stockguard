@@ -20,7 +20,7 @@ Run from the repo root with `PYTHONPATH=src`. It needs Python ≥3.9 and the sta
 
 - **Market-wide halt** or **asset paused** for a cash dividend, stock dividend, split, merger, acquisition, spinoff or maintenance → `BLOCK`
 - **Earnings-limited** asset → `WARN`
-- **US market closed** → `WARN` (the reference price is stale)
+- **US market closed**, or pre-market / after-hours / overnight / 24-7 off-hours trading → `WARN` (stale reference, thin liquidity)
 - **Multiplier ≠ 1** → `WARN` with the real share count ("1 token = 10 shares")
 - **Premium/discount** against the independent stock price → `WARN` above a threshold (default 1%)
 - **No independent stock price**, because the API quotes `token price ÷ multiplier` as the stock price → `WARN` ("any premium is invisible")
