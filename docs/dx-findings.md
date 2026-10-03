@@ -1,0 +1,38 @@
+# Raw findings log (evidence for the Developer Experience Report)
+
+This file is a lab notebook: what the public tokenized-securities endpoints returned, with the command to reproduce each observation. It is **not** the DX report. The organizers do not accept AI-generated reports, so the report itself must be written by the team member in their own words from these notes.
+
+Snapshot: `data/scan-20261003-weekend.jsonl` — 458 BSC tokens (chainId 56), scanned 2026-10-03 ~04:45 UTC (Saturday, US market closed). Scan time 7.3 s, 0 request errors.
+
+Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
+
+## F1. Weekend "stock price" is the token price divided by the multiplier
+- 427 of 458 tokens: `stockInfo.price × tokenInfo.sharesMultiplier == tokenInfo.price` to 1e-6.
+- Example NFLXon (`0x7048f5227b032326cc8dbc53cf3fddd947a2c757`): token 670.62353, stock 67.062353, multiplier 10.
+- The skill doc says `stockInfo.price` "May be null outside trading hours". It is not null; it is filled with a value derived from the token itself.
+- Effect: any premium/discount computed from this API outside US hours is always 0%. A bot cannot see whether it is overpaying on weekends. 8 tokens did return `null` (MAG7Xon, BLKDIGon, BRAINon, BLKHIon, YLD8on, BLKGRWon, YLD5on, and USDY), so client code must handle both.
+- Fixture: `fixtures/dynamic_nflx_weekend.json`.
+
+## F2. `marketStatus: "offhours"` is not in the documented enum
+- Documented values (API 4): premarket, regular, postmarket, overnight, closed, pause.
+- 31 tokens returned `offhours` with `reasonCode: TRADING`, while the market-wide endpoint said `marketStatus: closed, reasonCode: MARKET_CLOSED, reasonMsg: "Weekend or Holiday"`.
+- The market-wide response also carries an undocumented `offhours` object (`{"openState": true, "nextOpenTime": ..., "nextCloseTime": ...}`). Fixture: `fixtures/market_status_weekend.json`.
+- Effect: a client that switches on the documented enum falls into its default branch.
+
+## F3. Multipliers far from 1, in both directions
+- `multiplier` ≥ 2 on 9 BSC tokens (KLACon 10.026, NFLXon 10, PPLTon 10, PALLon 5, CVNAon 5, NOWon 5, IWFon 4.013, CRWDon 4, APHon 2.004) and < 0.2 on 2 (ENLVon 0.066667, SOXSon 0.1017).
+- Replay (`python3 -m stockguard replay data/scan-...jsonl --budget 1000`): an agent that wants $1,000 of exposure, reads the per-share price, and buys that many tokens ends up with $10,026 of KLAC, $10,000 of NFLX, but only $66.67 of ENLV.
+- The doc does explain the multiplier (Key Concept). The finding is about defaults: the price most UIs and agents show next to a ticker is per token, and nothing in the payload flags "this token is not ~1 share".
+
+## F4. One entry in the stock list has no symbol in the dynamic endpoint
+- `list/ai?type=1` (stocks) includes USDY (`0x608593d17a2decbbc4399e4185be4922f97ed32e`). `dynamic/ai` for it returns no `symbol`/`ticker`, `marketStatus: regular`, `reasonCode: TRADING` on a Saturday.
+
+## F5. Small things hit while building
+- The `/v1` vs `/v2` split (dynamic is v2, the rest v1) is easy to miss when building URLs from a common prefix.
+- `volume24h` in tokenInfo is the US stock volume in USD, not on-chain volume (the doc warns, but the field name invites the mistake).
+- `nextOpen` / `nextClose` meaning flips with `openState` (documented), so "time until open" needs both fields.
+
+## Not yet verified (needs a weekday session and/or an API key)
+- Behaviour during an actual `ASSET_PAUSED` (dividend/split) or `ASSET_LIMITED` (earnings) window.
+- Whether the derived-price behaviour (F1) also appears during `overnight` on weekdays.
+- Order placement through the Agentic Wallet / Binance Web3 APIs (requires sign-in and funds).

@@ -1,0 +1,93 @@
+import pytest
+from stockguard.domain.guard import Snapshot, check_trade, find_inconsistencies, ALLOW, WARN, BLOCK
+
+
+def snap(**kw):
+    base = dict(symbol="AAPLon", ticker="AAPL", token_price=100.0, stock_price=100.0, multiplier=1.0,
+                session="regular", status="TRADING", reason=None)
+    base.update(kw)
+    return Snapshot(**base)
+
+
+def test_normal_trading_allows():
+    v = check_trade(snap(), "BUY", 1)
+    assert v.level == ALLOW
+
+
+def test_market_closed_warns():
+    v = check_trade(snap(session="closed", status="MARKET_CLOSED"), "BUY", 1)
+    assert v.level == WARN and any("closed" in r for r in v.reasons)
+
+
+def test_market_paused_blocks():
+    assert check_trade(snap(status="MARKET_PAUSED"), "BUY", 1).level == BLOCK
+
+
+def test_dividend_pause_blocks():
+    v = check_trade(snap(status="ASSET_PAUSED", reason="cash_dividend"), "BUY", 1)
+    assert v.level == BLOCK and "dividend" in v.reasons[0]
+
+
+def test_split_pause_blocks():
+    v = check_trade(snap(status="ASSET_PAUSED", reason="stock_split"), "SELL", 1)
+    assert v.level == BLOCK and "split" in v.reasons[0]
+
+
+def test_earnings_limited_warns():
+    v = check_trade(snap(status="ASSET_LIMITED", reason="earnings"), "BUY", 1)
+    assert v.level == WARN and "Earnings" in v.reasons[0]
+
+
+def test_premium_above_threshold_warns_on_buy():
+    v = check_trade(snap(token_price=102.5, session="closed", status="MARKET_CLOSED"), "BUY", 1, premium_threshold=0.01)
+    assert v.level == WARN and any("2.5% above" in r for r in v.reasons)
+
+
+def test_discount_warns_on_sell_only():
+    s = snap(token_price=97.0)
+    assert check_trade(s, "SELL", 1).level == WARN
+    assert check_trade(s, "BUY", 1).level == ALLOW
+
+
+def test_multiplier_share_equivalent_and_reference():
+    s = snap(token_price=1000.0, stock_price=100.0, multiplier=10.0)
+    v = check_trade(s, "BUY", 1)
+    assert v.share_equivalent == 10
+    assert v.reference_price == 1000.0
+    assert abs(v.premium) < 1e-9
+    assert any("1 token = 10 shares" in r for r in v.reasons)
+
+
+def test_block_dominates_warn():
+    v = check_trade(snap(status="ASSET_PAUSED", reason="stock_split", multiplier=10.0, token_price=1000), "BUY", 1)
+    assert v.level == BLOCK
+
+
+def test_invalid_inputs():
+    with pytest.raises(ValueError):
+        check_trade(snap(), "HOLD", 1)
+    with pytest.raises(ValueError):
+        check_trade(snap(), "BUY", 0)
+
+
+def test_inconsistency_closed_market_but_trading_asset():
+    s = snap(session="offhours", status="TRADING", market_session="closed")
+    assert find_inconsistencies(s)
+
+
+def test_derived_reference_hides_premium_and_warns():
+    s = snap(token_price=670.62353, stock_price=67.062353, multiplier=10.0,
+             session="closed", status="MARKET_CLOSED", reference_derived=True)
+    v = check_trade(s, "BUY", 1)
+    assert v.premium is None and v.reference_price is None
+    assert any("No independent stock price" in r for r in v.reasons)
+
+
+def test_fractional_multiplier_reported():
+    v = check_trade(snap(token_price=1.0, stock_price=15.0, multiplier=0.066667), "BUY", 3)
+    assert abs(v.share_equivalent - 0.200001) < 1e-9
+    assert any("1 token = 0.06667 shares" in r for r in v.reasons)
+
+
+def test_undocumented_session_flagged():
+    assert any("undocumented" in x for x in find_inconsistencies(snap(session="offhours")))
