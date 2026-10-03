@@ -4,6 +4,7 @@ from typing import List, Optional
 
 ALLOW, WARN, BLOCK = "ALLOW", "WARN", "BLOCK"
 DOCUMENTED_SESSIONS = {"premarket", "regular", "postmarket", "overnight", "closed", "pause"}
+OUTSIDE_REGULAR = {"premarket", "postmarket", "overnight", "offhours"}
 _RANK = {ALLOW: 0, WARN: 1, BLOCK: 2}
 
 PAUSE_REASONS = {
@@ -14,7 +15,7 @@ PAUSE_REASONS = {
     "maintenance": "Paused for maintenance",
     "acquisition": "Paused for an acquisition",
     "spinoff": "Paused for a spinoff",
-    "corporate action": "Paused for a corporate action",
+    "corporate_action": "Paused for a corporate action",
 }
 
 
@@ -72,13 +73,17 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
 
     if s.status == "MARKET_PAUSED" or s.session == "pause":
         v.raise_to(BLOCK, "Market-wide trading halt")
+    reason_key = (s.reason or "").strip().lower().replace(" ", "_")
     if s.status == "ASSET_PAUSED":
-        v.raise_to(BLOCK, PAUSE_REASONS.get(s.reason or "", f"Asset paused ({s.reason or 'unknown reason'})"))
+        v.raise_to(BLOCK, PAUSE_REASONS.get(reason_key, f"Asset paused ({s.reason or 'unknown reason'})"))
     if s.status == "ASSET_LIMITED":
-        what = "Earnings release" if s.reason == "earnings" else f"Limited ({s.reason or 'unknown reason'})"
+        what = "Earnings release" if reason_key == "earnings" else f"Limited ({s.reason or 'unknown reason'})"
         v.raise_to(WARN, f"{what} — trading restricted")
     if s.status == "MARKET_CLOSED" or s.session == "closed":
         v.raise_to(WARN, "US market is closed — the reference price is stale")
+    elif s.session in OUTSIDE_REGULAR or s.market_session == "closed":
+        v.raise_to(WARN, "Outside regular US hours — the stock quote is from extended/overnight trading or the last close, "
+                         "and liquidity is thin")
 
     if abs(s.multiplier - 1.0) > 0.05:
         v.raise_to(WARN, f"1 token = {s.multiplier:.4g} shares — compare prices per token, not per share")

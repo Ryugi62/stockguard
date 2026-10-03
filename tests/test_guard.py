@@ -91,3 +91,19 @@ def test_fractional_multiplier_reported():
 
 def test_undocumented_session_flagged():
     assert any("undocumented" in x for x in find_inconsistencies(snap(session="offhours")))
+
+
+def test_offhours_trading_while_market_closed_warns():
+    # Real weekend shape (AAPLon 2026-10-03): asset says offhours/TRADING, market-wide says closed.
+    s = snap(token_price=334.7, stock_price=333.5, session="offhours", status="TRADING", market_session="closed")
+    v = check_trade(s, "BUY", 1)
+    assert v.level == WARN and any("Outside regular US hours" in r for r in v.reasons)
+
+
+def test_premarket_warns_even_if_market_session_unknown():
+    assert check_trade(snap(session="premarket"), "BUY", 1).level == WARN
+
+
+def test_pause_reason_free_text_is_normalised():
+    v = check_trade(snap(status="ASSET_PAUSED", reason="Corporate Action"), "BUY", 1)
+    assert v.level == BLOCK and v.reasons[0] == "Paused for a corporate action"
