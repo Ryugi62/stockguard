@@ -12,6 +12,7 @@ PATHS = {
     "market_status": "/v1/public/wallet-direct/buw/wallet/market/token/rwa/market/status/ai",
     "asset_status": "/v1/public/wallet-direct/buw/wallet/market/token/rwa/asset/market/status/ai",
     "dynamic": "/v2/public/wallet-direct/buw/wallet/market/token/rwa/dynamic/ai",
+    "kline": "/v1/public/wallet-direct/buw/wallet/dex/market/token/kline/ai",
 }
 HEADERS = {"Accept-Encoding": "identity", "User-Agent": "binance-web3/1.1 (Skill)"}
 
@@ -66,3 +67,7 @@ class RwaClient:
 
     def meta(self, address: str, chain_id: str = "56") -> Dict:
         return self._call("meta", chainId=chain_id, contractAddress=address) or {}
+
+    def kline(self, address: str, interval: str = "1d", limit: int = 10, chain_id: str = "56") -> List:
+        data = self._call("kline", chainId=chain_id, contractAddress=address, interval=interval, limit=limit) or {}
+        return data.get("klineInfos") or []

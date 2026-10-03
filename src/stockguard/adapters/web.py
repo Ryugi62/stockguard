@@ -30,12 +30,13 @@ def make_handler(guard):
             u = urllib.parse.urlparse(self.path)
             q = dict(urllib.parse.parse_qsl(u.query))
             if u.path == "/api/check":
-                key = (q.get("ticker", "").upper(), q.get("side", "BUY").upper(), q.get("qty", "1"))
+                key = (q.get("ticker", "").upper(), q.get("side", "BUY").upper(), q.get("qty", ""), q.get("usd", ""))
                 hit = cache.get(key)
                 if hit and time.time() - hit[0] < CACHE_TTL:
                     return self._json(200, hit[1])
                 try:
-                    r = guard.check(key[0], key[1], float(key[2]))
+                    r = guard.check(key[0], key[1], float(key[2]) if key[2] else None,
+                                    usd_amount=float(key[3]) if key[3] else None)
                 except TickerNotFound as e:
                     hint = f" Did you mean {', '.join(e.suggestions)}?" if e.suggestions else ""
                     return self._json(404, {"error": f"No tokenized stock found for '{key[0]}'.{hint}"})

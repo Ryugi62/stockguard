@@ -107,3 +107,17 @@ def test_premarket_warns_even_if_market_session_unknown():
 def test_pause_reason_free_text_is_normalised():
     v = check_trade(snap(status="ASSET_PAUSED", reason="Corporate Action"), "BUY", 1)
     assert v.level == BLOCK and v.reasons[0] == "Paused for a corporate action"
+
+
+def test_thin_market_warns_when_order_is_large_share_of_supply():
+    s = snap(onchain_supply=220.99)
+    v = check_trade(s, "BUY", 15)   # ~6.8% of all tokens
+    assert v.level == WARN and any("Thin market" in r for r in v.reasons)
+    assert abs(v.order_share_of_supply - 15 / 220.99) < 1e-9
+
+
+def test_risk_ranks_x10_closed_above_plain_closed():
+    plain = check_trade(snap(session="closed", status="MARKET_CLOSED"), "BUY", 1)
+    x10 = check_trade(snap(session="closed", status="MARKET_CLOSED", multiplier=10, token_price=1000), "BUY", 1)
+    assert x10.risk > plain.risk > 0
+    assert check_trade(snap(status="ASSET_PAUSED", reason="stock_split"), "BUY", 1).risk == 100

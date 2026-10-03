@@ -31,6 +31,8 @@
   .fact b { display:block; font-size:18px; }
   .fact span { color:var(--sub); font-size:13px; }
   .muted { color:var(--sub); font-size:13px; margin-top:16px; }
+  .risk { white-space:nowrap; margin-left:auto; font-size:13px; font-weight:600; color:var(--sub); border:1px solid var(--line); border-radius:999px; padding:2px 10px; }
+  .trap { margin-top:16px; padding:12px 14px; border-radius:12px; background:rgba(245,159,0,.12); font-size:14px; }
   .err { color:var(--block); }
 </style>
 </head>
@@ -70,26 +72,24 @@ $("f").addEventListener("submit", async (e) => {
   const t = $("t").value.trim(); if (!t) return;
   $("out").innerHTML = '<div class="card">Checking…</div>';
   try {
-    // first ask with 1 token to learn the price, then size the order from the dollar amount
-    let r = await fetch(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&qty=1`);
-    let d = await r.json();
-    if (!r.ok) throw new Error(d.error || "Something went wrong");
     const usd = Number($("usd").value) || 100;
-    const qty = +(usd / d.token_price).toPrecision(6);
-    r = await fetch(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&qty=${qty}`);
-    d = await r.json();
+    const r = await fetch(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&usd=${usd}`);
+    const d = await r.json();
     if (!r.ok) throw new Error(d.error || "Something went wrong");
+    const naive = Math.abs(d.multiplier - 1) > 0.05 ? usd * d.multiplier : null;
     const perShare = d.multiplier ? d.token_price / d.multiplier : null;
     $("out").innerHTML = `
       <div class="card ${d.verdict}">
-        <div class="verdict"><span class="dot"></span>${HEAD[d.verdict]}</div>
+        <div class="verdict"><span class="dot"></span>${HEAD[d.verdict]}<span class="risk">risk ${d.risk}/100</span></div>
         <ul>${d.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
         <div class="facts">
           <div class="fact"><b>${money(usd)} ≈ ${Number(d.token_qty.toPrecision(4))} tokens = ${Number(d.share_equivalent.toPrecision(4))} ${esc(d.ticker)} shares</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"}</span></div>
-          <div class="fact"><b>${money(d.token_price)}</b><span>per token (${money(perShare)} per share)</span></div>
+          <div class="fact"><b>${money(d.token_price)}</b><span>per token (${money(perShare)} per share${d.reference_derived ? ", derived from the token price" : ""})</span></div>
           <div class="fact"><b>${esc(SESSION[d.session] || d.session || "unknown")}</b><span>right now</span></div>
           <div class="fact"><b>${d.premium == null ? "Can't tell" : (d.premium * 100).toFixed(2) + "%"}</b><span>${d.premium == null ? "no independent stock price to compare with right now" : "token price vs. the real stock price"}</span></div>
         </div>
+        ${naive ? `<p class="trap">A bot that reads the per-share price as the token price would have bought <b>${money(naive)}</b> of ${esc(d.ticker)} instead of ${money(usd)}.</p>` : ""}
+        ${d.onchain_supply ? `<p class="muted">On BNB Chain right now: ${Number(d.onchain_supply.toPrecision(6)).toLocaleString()} ${esc(d.symbol)} tokens in total (read from the token contract). Your order is ${(d.order_share_of_supply * 100).toFixed(2)}% of them.</p>` : ""}
         ${d.next_open_ms && d.session !== "regular" ? `<p class="muted">Next trading session opens around ${esc(fmtTime(d.next_open_ms))}.</p>` : ""}
         ${d.attestation_daily ? `<p class="muted">${esc(d.name || d.symbol)} — issuer's <a href="${esc(d.attestation_daily)}" target="_blank" rel="noopener">daily attestation report</a> (proof the tokens are backed by real shares).</p>` : ""}
       </div>`;

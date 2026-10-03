@@ -13,6 +13,8 @@ TOOL = {
             "ticker": {"type": "string", "description": "Underlying ticker (AAPL), token symbol (AAPLon) or contract"},
             "side": {"type": "string", "enum": ["BUY", "SELL"], "default": "BUY"},
             "token_qty": {"type": "number", "default": 1, "description": "Quantity in TOKENS, not shares"},
+            "usd_amount": {"type": "number", "description": "Alternative to token_qty: order size in US dollars; "
+                                                            "the tool returns the correct token quantity"},
         },
         "required": ["ticker"],
     },
@@ -30,8 +32,12 @@ def handle(guard, msg):
         if params.get("name") != TOOL["name"]:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown tool"}}
         a = params.get("arguments") or {}
+        if not isinstance(a.get("ticker"), str) or not a["ticker"].strip():
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "argument 'ticker' (string) is required"}}
+        if a.get("side", "BUY") not in ("BUY", "SELL"):
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "side must be BUY or SELL"}}
         try:
-            r = guard.check(a["ticker"], a.get("side", "BUY"), float(a.get("token_qty", 1)))
+            r = guard.check(a["ticker"], a.get("side", "BUY"), a.get("token_qty"), usd_amount=a.get("usd_amount"))
             res = {"content": [{"type": "text", "text": json.dumps(r)}], "isError": False}
         except Exception as e:
             res = {"content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}], "isError": True}

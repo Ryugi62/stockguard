@@ -41,3 +41,17 @@ def test_unknown_ticker_suggests_close_matches():
 def test_check_includes_issuer_attestation():
     r = Guard(FakeClient(), to_snapshot).check("NFLX")
     assert r["name"] == "Netflix (Ondo)" and r["attestation_daily"].startswith("https://bin.bnbstatic.com/")
+
+
+class FakeChain:
+    def __init__(self, supply):
+        self.supply = supply
+    def total_supply(self, token):
+        return self.supply
+
+
+def test_onchain_supply_feeds_thin_market_and_mismatch_note():
+    g = Guard(FakeClient(), to_snapshot, onchain=FakeChain(100.0))
+    r = g.check("NFLX", "BUY", 5)
+    assert r["onchain_supply"] == 100.0 and any("Thin market" in x for x in r["reasons"])
+    assert any("circulatingSupply" in n for n in r["data_notes"])   # fixture says ~220.99

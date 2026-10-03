@@ -1,4 +1,5 @@
 """Use cases: check one trade, scan every BSC tokenized stock. Depends on a client port, not on HTTP."""
+import dataclasses
 import json
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
@@ -17,6 +18,10 @@ class RwaPort(Protocol):
     def meta(self, address: str, chain_id: str = "56") -> Dict: ...
 
 
+class SupplyPort(Protocol):
+    def total_supply(self, token: str) -> Optional[float]: ...
+
+
 class TickerNotFound(KeyError):
     def __init__(self, query: str, suggestions: Optional[List[str]] = None):
         super().__init__(query)
@@ -24,8 +29,10 @@ class TickerNotFound(KeyError):
 
 
 class Guard:
-    def __init__(self, client: RwaPort, to_snapshot: ToSnapshot, chain_id: str = "56", list_ttl: float = 600.0):
+    def __init__(self, client: RwaPort, to_snapshot: ToSnapshot, chain_id: str = "56", list_ttl: float = 600.0,
+                 onchain: Optional[SupplyPort] = None):
         self.client, self.to_snapshot, self.chain_id, self.list_ttl = client, to_snapshot, chain_id, list_ttl
+        self.onchain = onchain
         self._tokens: Optional[List[Dict]] = None
         self._tokens_at = 0.0
 
@@ -46,15 +53,38 @@ class Guard:
         raise TickerNotFound(query, difflib.get_close_matches(query.upper(), names, n=3, cutoff=0.6))
 
     def snapshot(self, query: str) -> Snapshot:
-        t = self.resolve(query)
-        return self.to_snapshot(self.client.dynamic(t["contractAddress"], self.chain_id), self.client.market_status())
+        return self._snapshot(self.resolve(query))[0]
 
-    def check(self, query: str, side: str = "BUY", token_qty: float = 1.0, premium_threshold: float = 0.01) -> Dict:
+    def _snapshot(self, t: Dict):
+        dyn = self.client.dynamic(t["contractAddress"], self.chain_id)
+        s = self.to_snapshot(dyn, self.client.market_status())
+        notes = []
+        if self.onchain is not None:
+            try:
+                supply = self.onchain.total_supply(t["contractAddress"])
+                s = dataclasses.replace(s, onchain_supply=supply)
+                api = float((dyn.get("tokenInfo") or {}).get("circulatingSupply") or 0)
+                if supply and api and abs(api - supply) / supply > 0.001:
+                    notes.append(f"{s.symbol}: API circulatingSupply {api:,.4f} != on-chain totalSupply {supply:,.4f}")
+            except Exception as e:  # chain read is a bonus; never fail the check on it
+                notes.append(f"{s.symbol}: on-chain read failed ({type(e).__name__})")
+        return s, notes
+
+    def check(self, query: str, side: str = "BUY", token_qty: Optional[float] = None, premium_threshold: float = 0.01,
+              usd_amount: Optional[float] = None) -> Dict:
+        """Size by tokens, or by dollars (usd_amount) — dollars are converted with the per-TOKEN price."""
         t = self.resolve(query)
-        s = self.to_snapshot(self.client.dynamic(t["contractAddress"], self.chain_id), self.client.market_status())
+        s, notes = self._snapshot(t)
+        if usd_amount is not None:
+            if usd_amount <= 0 or not s.token_price:
+                raise ValueError("usd_amount must be positive and a token price must exist")
+            token_qty = usd_amount / s.token_price
+        token_qty = 1.0 if token_qty is None else float(token_qty)
         v = check_trade(s, side.upper(), token_qty, premium_threshold)
         out = render(s, v, side.upper(), token_qty)
         out["contract"] = t["contractAddress"]
+        out["usd_amount"] = round(token_qty * s.token_price, 2)
+        out["data_notes"] = notes + find_inconsistencies(s)
         out.update(self._issuer_info(t["contractAddress"]))
         return out
 
@@ -101,7 +131,8 @@ class Guard:
 def render(s: Snapshot, v: Verdict, side: str, qty: float) -> Dict:
     return {
         "symbol": s.symbol, "ticker": s.ticker, "side": side, "token_qty": qty,
-        "verdict": v.level, "reasons": v.reasons,
+        "verdict": v.level, "risk": v.risk, "reasons": v.reasons,
+        "onchain_supply": s.onchain_supply, "order_share_of_supply": v.order_share_of_supply,
         "share_equivalent": v.share_equivalent, "multiplier": s.multiplier,
         "token_price": s.token_price, "stock_price": s.stock_price,
         "reference_price": v.reference_price, "premium": v.premium,

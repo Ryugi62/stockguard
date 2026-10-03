@@ -19,3 +19,17 @@ def test_mcp_roundtrip():
     assert [o["id"] for o in out] == [1, 2, 3]
     payload = json.loads(out[2]["result"]["content"][0]["text"])
     assert payload["verdict"] == "WARN" and payload["share_equivalent"] == 10
+
+
+def test_mcp_rejects_missing_ticker_and_sizes_by_usd():
+    fin = io.StringIO("\n".join(json.dumps(m) for m in [
+        {"jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": {"name": "check_tokenized_stock_trade", "arguments": {}}},
+        {"jsonrpc": "2.0", "id": 2, "method": "tools/call",
+         "params": {"name": "check_tokenized_stock_trade", "arguments": {"ticker": "NFLX", "usd_amount": 1000}}},
+    ]) + "\n")
+    fout = io.StringIO()
+    run(Guard(FakeClient(), to_snapshot), fin, fout)
+    out = [json.loads(l) for l in fout.getvalue().splitlines()]
+    assert out[0]["error"]["code"] == -32602
+    p = json.loads(out[1]["result"]["content"][0]["text"])
+    assert abs(p["token_qty"] - 1000 / 670.62353) < 1e-9 and abs(p["share_equivalent"] - 10000 / 670.62353) < 1e-6
