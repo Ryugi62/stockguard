@@ -16,7 +16,9 @@
   form { display:flex; gap:8px; flex-wrap:wrap; }
   input, select, button { font:inherit; border-radius:12px; border:1px solid var(--line); padding:14px 16px; background:var(--card); color:var(--ink); }
   input#t { flex:1 1 160px; text-transform:uppercase; }
-  input#q { width:96px; }
+  input#usd { width:120px; }
+  code { font-size:.9em; }
+  a { color:var(--accent); }
   button { background:var(--accent); color:#fff; border:none; font-weight:600; cursor:pointer; flex:1 1 100%; }
   .card { background:var(--card); border-radius:20px; padding:24px; margin-top:24px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
   .verdict { font-size:22px; font-weight:700; display:flex; align-items:center; gap:10px; }
@@ -35,11 +37,12 @@
 <body>
 <main>
   <h1>Can I trade this tokenized stock right now?</h1>
-  <p class="lead">Type a US stock. StockGuard checks the market session, corporate-action pauses and how many real shares one token is — before you press buy.</p>
+  <p class="lead">Type a US stock. StockGuard checks the market session, dividend and split pauses, and how many real shares one token is — before you press buy. Covers the Ondo Global Markets stock tokens (<code>…on</code>) on BNB Chain.</p>
   <form id="f">
-    <input id="t" placeholder="AAPL" value="NFLX" aria-label="Ticker" autocomplete="off">
+    <input id="t" placeholder="AAPL" value="NFLX" aria-label="Ticker" autocomplete="off" list="tickers">
+    <datalist id="tickers"></datalist>
     <select id="s" aria-label="Side"><option>BUY</option><option>SELL</option></select>
-    <input id="q" type="number" min="0.000001" step="any" value="1" aria-label="Tokens">
+    <input id="usd" type="number" min="1" step="any" value="100" aria-label="Amount in US dollars" title="Amount in US dollars" placeholder="US$">
     <button>Check</button>
   </form>
   <div id="out"></div>
@@ -50,27 +53,45 @@ const $ = (id) => document.getElementById(id);
 const money = (x) => x == null ? "—" : "$" + Number(x).toLocaleString("en-US", {maximumFractionDigits: 2});
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const HEAD = { ALLOW: "Looks fine to trade now", WARN: "You can trade, but read this first", BLOCK: "Don't trade this right now" };
+const SESSION = { regular: "US market is open", premarket: "US pre-market (thin trading)", postmarket: "US after-hours (thin trading)",
+  overnight: "US overnight session (thin trading)", offhours: "Token trades 24/7, US market is closed", closed: "US market is closed",
+  pause: "Trading halted" };
+const fmtTime = (ms) => {
+  const d = new Date(ms);
+  const et = d.toLocaleString("en-US", {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit"});
+  const local = d.toLocaleString(undefined, {weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short"});
+  return `${et} New York time (${local} for you)`;
+};
+fetch("/api/tickers").then((r) => r.json()).then((xs) => {
+  $("tickers").innerHTML = xs.map((x) => `<option value="${esc(x)}">`).join("");
+}).catch(() => {});
 $("f").addEventListener("submit", async (e) => {
   e.preventDefault();
   const t = $("t").value.trim(); if (!t) return;
   $("out").innerHTML = '<div class="card">Checking…</div>';
   try {
-    const r = await fetch(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&qty=${$("q").value}`);
-    const d = await r.json();
+    // first ask with 1 token to learn the price, then size the order from the dollar amount
+    let r = await fetch(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&qty=1`);
+    let d = await r.json();
+    if (!r.ok) throw new Error(d.error || "Something went wrong");
+    const usd = Number($("usd").value) || 100;
+    const qty = +(usd / d.token_price).toPrecision(6);
+    r = await fetch(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&qty=${qty}`);
+    d = await r.json();
     if (!r.ok) throw new Error(d.error || "Something went wrong");
     const perShare = d.multiplier ? d.token_price / d.multiplier : null;
-    const opens = d.next_open_ms ? new Date(d.next_open_ms).toLocaleString() : null;
     $("out").innerHTML = `
       <div class="card ${d.verdict}">
         <div class="verdict"><span class="dot"></span>${HEAD[d.verdict]}</div>
         <ul>${d.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
         <div class="facts">
-          <div class="fact"><b>${d.token_qty} token${d.token_qty == 1 ? "" : "s"} = ${Number(d.share_equivalent.toPrecision(6))} ${esc(d.ticker)} share${d.share_equivalent == 1 ? "" : "s"}</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"}</span></div>
+          <div class="fact"><b>${money(usd)} ≈ ${Number(d.token_qty.toPrecision(4))} tokens = ${Number(d.share_equivalent.toPrecision(4))} ${esc(d.ticker)} shares</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"}</span></div>
           <div class="fact"><b>${money(d.token_price)}</b><span>per token (${money(perShare)} per share)</span></div>
-          <div class="fact"><b>${esc(d.session || "unknown")}</b><span>session · ${esc(d.status)}</span></div>
-          <div class="fact"><b>${d.premium == null ? "unknown" : (d.premium * 100).toFixed(2) + "%"}</b><span>vs. independent stock price</span></div>
+          <div class="fact"><b>${esc(SESSION[d.session] || d.session || "unknown")}</b><span>right now</span></div>
+          <div class="fact"><b>${d.premium == null ? "Can't tell" : (d.premium * 100).toFixed(2) + "%"}</b><span>${d.premium == null ? "no independent stock price to compare with right now" : "token price vs. the real stock price"}</span></div>
         </div>
-        ${opens && d.session !== "regular" ? `<p class="muted">Trading reopens around ${esc(opens)}.</p>` : ""}
+        ${d.next_open_ms && d.session !== "regular" ? `<p class="muted">Next trading session opens around ${esc(fmtTime(d.next_open_ms))}.</p>` : ""}
+        ${d.attestation_daily ? `<p class="muted">${esc(d.name || d.symbol)} — issuer's <a href="${esc(d.attestation_daily)}" target="_blank" rel="noopener">daily attestation report</a> (proof the tokens are backed by real shares).</p>` : ""}
       </div>`;
   } catch (err) {
     $("out").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
