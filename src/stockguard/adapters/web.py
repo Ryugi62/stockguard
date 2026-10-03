@@ -9,6 +9,7 @@ from stockguard.application.service import TickerNotFound
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "web"))
 CACHE_TTL = 30.0
+CACHE_MAX = 512
 
 
 def make_handler(guard):
@@ -44,6 +45,8 @@ def make_handler(guard):
                     return self._json(400, {"error": str(e)})
                 except Exception as e:
                     return self._json(502, {"error": "Upstream data unavailable", "detail": str(e)[:200]})
+                if len(cache) >= CACHE_MAX:
+                    cache.pop(min(cache, key=lambda k: cache[k][0]))
                 cache[key] = (time.time(), r)
                 return self._json(200, r)
             if u.path == "/api/tickers":

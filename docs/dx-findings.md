@@ -25,6 +25,14 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 - Replay (`python3 -m stockguard replay data/scan-...jsonl --budget 1000`) — a **hypothetical** agent (not an observed one) that wants $1,000 of exposure, reads the per-share price, and buys that many tokens would end up with $10,026 of KLAC, $10,000 of NFLX, but only $66.67 of ENLV.
 - The doc does explain the multiplier (Key Concept). The finding is about defaults: the price most UIs and agents show next to a ticker is per token, and nothing in the payload flags "this token is not ~1 share".
 
+## F4. One entry in the stock list has no symbol in the dynamic endpoint
+- `list/ai?type=1` (stocks) includes USDY (`0x608593d17a2decbbc4399e4185be4922f97ed32e`). `dynamic/ai` for it returns no `symbol`/`ticker`, `marketStatus: regular`, `reasonCode: TRADING` on a Saturday.
+
+## F5. Small things hit while building
+- The `/v1` vs `/v2` split (dynamic is v2, the rest v1) is easy to miss when building URLs from a common prefix.
+- `volume24h` in tokenInfo is the US stock volume in USD, not on-chain volume (the doc warns, but the field name invites the mistake).
+- `nextOpen` / `nextClose` meaning flips with `openState` (documented), so "time until open" needs both fields.
+
 ## F6. Two different kinds of weekend quote, with no field telling them apart
 - Of the 31 `offhours` tokens, 18 carry a stock price that is **not** derived from the token price (an independent but stale quote), while the other 440 tokens carry either a derived price (F1) or `null`.
 - A client cannot tell "live", "stale but real" and "derived" apart without re-doing the arithmetic. A `referenceSource: live | last_close | derived` field would remove the guesswork.
@@ -34,17 +42,9 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 - Either the field is not populated for RWA tokens or the candles are not trade-derived. In both cases a client cannot use this endpoint to judge on-chain liquidity, which is exactly what a pre-trade check needs.
 
 ## F8. On-chain supply matches the API (a positive check)
-- `totalSupply()` read directly from the NFLXon contract over public BSC RPC = 220.9909 tokens, equal to the API `circulatingSupply`. Total value on BNB Chain ≈ $148k, so a $20k order is ~13% of every NFLXon token in existence — StockGuard now warns on that ("Thin market").
+- `totalSupply()` read directly from the NFLXon contract over public BSC RPC = 220.9909 tokens, equal to the API `circulatingSupply`. Total value on BNB Chain ≈ $148k, so a $20k order is ~13% of every NFLXon token in existence — StockGuard shows that as a size note. Supply is not depth (Ondo mints on demand), so price impact still needs a trade quote (Trading API — key required).
 
 Reading guide for the report: F1, F2 and F6 are one theme — **how far can a client trust the reference price** — and lead to one request (a `referenceSource` field + `offhours` in the enum).
-
-## F4. One entry in the stock list has no symbol in the dynamic endpoint
-- `list/ai?type=1` (stocks) includes USDY (`0x608593d17a2decbbc4399e4185be4922f97ed32e`). `dynamic/ai` for it returns no `symbol`/`ticker`, `marketStatus: regular`, `reasonCode: TRADING` on a Saturday.
-
-## F5. Small things hit while building
-- The `/v1` vs `/v2` split (dynamic is v2, the rest v1) is easy to miss when building URLs from a common prefix.
-- `volume24h` in tokenInfo is the US stock volume in USD, not on-chain volume (the doc warns, but the field name invites the mistake).
-- `nextOpen` / `nextClose` meaning flips with `openState` (documented), so "time until open" needs both fields.
 
 ## Still to write from first-hand use (the human report must cover these)
 - Onboarding time from opening the docs to the first successful call, and where it stalled.

@@ -57,8 +57,9 @@ class Verdict:
     share_equivalent: float = 0.0
     reference_price: Optional[float] = None
     premium: Optional[float] = None
-    risk: int = 0                     # 0-100, ranks WARNs against each other
+    risk: int = 0                     # 0-100, ranks WARNs against each other (weights: RISK_WEIGHTS)
     order_share_of_supply: Optional[float] = None
+    notes: List[str] = field(default_factory=list)   # informational, does not raise the level
 
     def add_risk(self, points: int) -> None:
         self.risk = min(100, self.risk + points)
@@ -69,10 +70,16 @@ class Verdict:
         self.reasons.append(reason)
 
 
-THIN_SUPPLY_SHARE = 0.01   # an order bigger than 1% of all tokens in existence is a thin-market trade
+LARGE_FLOAT_SHARE = 0.01   # an order bigger than 1% of all tokens in existence is unusually large for this token
+
+# Risk weights (documented; additive, capped at 100). They rank warnings, they are not probabilities.
+RISK_WEIGHTS = {"halt_or_pause": 100, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
+                "multiplier": "up to 30, grows with |log10(multiplier)|", "premium": "1 point per 0.1% beyond threshold, max 40",
+                "no_independent_price": 15}
 
 
-def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: float = 0.01) -> Verdict:
+def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: float = 0.01,
+                sized_in_usd: bool = False) -> Verdict:
     """Is this trade safe to place now, and what is really being bought?"""
     if side not in ("BUY", "SELL"):
         raise ValueError("side must be BUY or SELL")
@@ -96,8 +103,12 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
                          "and liquidity is thin"); v.add_risk(10)
 
     if abs(s.multiplier - 1.0) > 0.05:
-        v.raise_to(WARN, f"1 token = {s.multiplier:.4g} shares — compare prices per token, not per share")
-        v.add_risk(min(30, int(10 * abs(math.log10(s.multiplier)) * 3)))
+        msg = f"1 token = {s.multiplier:.4g} shares — compare prices per token, not per share"
+        if sized_in_usd:
+            v.notes.append(msg + " (already handled: your dollar amount was converted with the per-token price)")
+        else:
+            v.raise_to(WARN, msg)
+            v.add_risk(min(30, int(10 * abs(math.log10(s.multiplier)) * 3)))
 
     p = s.premium
     if p is not None and side == "BUY" and p > premium_threshold:
@@ -113,10 +124,10 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
     if s.onchain_supply and s.onchain_supply > 0:
         share = token_qty / s.onchain_supply
         v.order_share_of_supply = share
-        if side == "BUY" and share > THIN_SUPPLY_SHARE:
-            v.raise_to(WARN, f"Thin market — this order is {share * 100:.1f}% of all {s.symbol} tokens on BNB Chain "
-                             f"({s.onchain_supply:,.2f} in total)")
-            v.add_risk(min(40, int(share * 400)))
+        if side == "BUY" and share > LARGE_FLOAT_SHARE:
+            # Supply is not liquidity: Ondo mints/redeems on demand. This is a size signal, not a depth measurement.
+            v.notes.append(f"Large order for this token — {share * 100:.1f}% of all {s.symbol} tokens on BNB Chain "
+                           f"({s.onchain_supply:,.2f} in total); check the quote's price impact before signing")
 
     if not v.reasons:
         v.reasons.append("Trading normally; price is within the reference band")

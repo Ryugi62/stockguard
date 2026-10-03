@@ -50,8 +50,8 @@ class FakeChain:
         return self.supply
 
 
-def test_onchain_supply_feeds_thin_market_and_mismatch_note():
+def test_onchain_supply_feeds_large_order_note_and_mismatch_note():
     g = Guard(FakeClient(), to_snapshot, onchain=FakeChain(100.0))
     r = g.check("NFLX", "BUY", 5)
-    assert r["onchain_supply"] == 100.0 and any("Thin market" in x for x in r["reasons"])
+    assert r["onchain_supply"] == 100.0 and any("Large order" in x for x in r["notes"])
     assert any("circulatingSupply" in n for n in r["data_notes"])   # fixture says ~220.99

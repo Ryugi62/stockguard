@@ -109,11 +109,16 @@ def test_pause_reason_free_text_is_normalised():
     assert v.level == BLOCK and v.reasons[0] == "Paused for a corporate action"
 
 
-def test_thin_market_warns_when_order_is_large_share_of_supply():
-    s = snap(onchain_supply=220.99)
-    v = check_trade(s, "BUY", 15)   # ~6.8% of all tokens
-    assert v.level == WARN and any("Thin market" in r for r in v.reasons)
+def test_large_order_vs_supply_is_a_note_not_a_warning():
+    # supply is not liquidity (Ondo mints on demand) — informational only
+    v = check_trade(snap(onchain_supply=220.99), "BUY", 15)   # ~6.8% of all tokens
+    assert v.level == ALLOW and any("Large order" in n for n in v.notes)
     assert abs(v.order_share_of_supply - 15 / 220.99) < 1e-9
+
+
+def test_multiplier_is_a_note_when_sized_in_usd():
+    v = check_trade(snap(token_price=1000.0, stock_price=100.0, multiplier=10.0), "BUY", 1, sized_in_usd=True)
+    assert v.level == ALLOW and any("already handled" in n for n in v.notes)
 
 
 def test_risk_ranks_x10_closed_above_plain_closed():

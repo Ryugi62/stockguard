@@ -80,7 +80,7 @@ class Guard:
                 raise ValueError("usd_amount must be positive and a token price must exist")
             token_qty = usd_amount / s.token_price
         token_qty = 1.0 if token_qty is None else float(token_qty)
-        v = check_trade(s, side.upper(), token_qty, premium_threshold)
+        v = check_trade(s, side.upper(), token_qty, premium_threshold, sized_in_usd=usd_amount is not None)
         out = render(s, v, side.upper(), token_qty)
         out["contract"] = t["contractAddress"]
         out["usd_amount"] = round(token_qty * s.token_price, 2)
@@ -131,7 +131,7 @@ class Guard:
 def render(s: Snapshot, v: Verdict, side: str, qty: float) -> Dict:
     return {
         "symbol": s.symbol, "ticker": s.ticker, "side": side, "token_qty": qty,
-        "verdict": v.level, "risk": v.risk, "reasons": v.reasons,
+        "verdict": v.level, "risk": v.risk, "reasons": v.reasons, "notes": v.notes,
         "onchain_supply": s.onchain_supply, "order_share_of_supply": v.order_share_of_supply,
         "share_equivalent": v.share_equivalent, "multiplier": s.multiplier,
         "token_price": s.token_price, "stock_price": s.stock_price,
