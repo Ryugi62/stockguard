@@ -2,6 +2,8 @@
 
 **"Can I trade this tokenized stock right now — and what am I really buying?"**
 
+Built on the **Ondo Global Markets** stock tokens on BNB Chain (`…on` symbols such as NFLXon, AAPLon), read through the Binance Web3 RWA Data API.
+
 Tokenized US stocks on BNB Chain trade 24/7. The underlying stocks do not. Corporate actions pause single tokens, and one token is often not one share: NFLXon is 10 Netflix shares, ENLVon is 0.067 of an Enlivex share. StockGuard sits in front of any trade, whether a person or an agent places it, and answers with `ALLOW`, `WARN` or `BLOCK` plus reasons in plain English.
 
 It ships three ways:
@@ -25,11 +27,24 @@ Run from the repo root with `PYTHONPATH=src`. It needs Python ≥3.9 and the sta
 
 ## What we found on live data (2026-10-03, 458 BSC tokens, scan in 7.3 s)
 
-- 427 of 458 tokens reported a weekend "stock price" equal to the token price divided by the multiplier. Premium checks based on it always read 0%.
+- 432 of 458 tokens reported a weekend "stock price" equal to the token price divided by the multiplier. Premium checks based on it always read 0%.
+- The Token K-Line endpoint returned volume `"0"` for every daily candle of 10 sampled tokens over 10 days.
 - 31 tokens reported `marketStatus: "offhours"`, a value missing from the documented enum, while the market-wide status said `closed`.
-- 11 tokens have multipliers ≥2 or <0.2. In a replay, an agent that buys "$1,000 worth" by reading the per-share price ends up holding **$10,026 of KLAC** or **$66.67 of ENLV**: `python3 -m stockguard replay data/scan-20261003-weekend.jsonl`.
+- 11 tokens have multipliers ≥2 or <0.2. In a replay, a hypothetical agent that buys "$1,000 worth" by reading the per-share price ends up holding **$10,026 of KLAC** or **$66.67 of ENLV**: `python3 -m stockguard replay data/scan-20261003-weekend.jsonl`.
 
 Evidence and reproduction steps: `docs/dx-findings.md`.
+
+## Use it from an agent (MCP)
+
+```json
+{ "mcpServers": { "stockguard": { "command": "python3", "args": ["-m", "stockguard", "mcp"],
+  "env": { "PYTHONPATH": "/path/to/bnb-hack-tokenized/src" } } } }
+```
+Tool: `check_tokenized_stock_trade({ticker, side, token_qty})` → `ALLOW | WARN | BLOCK` + reasons + share count + issuer attestation link.
+
+## Not in this build
+
+StockGuard reads and judges; it does not trade. The guarded-trade flow (StockGuard verdict → Transaction API dry-run → Agentic Wallet signature → small mainnet buy) needs a developer-portal API key and a funded wallet, and is the next step.
 
 ## Architecture
 
@@ -38,7 +53,7 @@ Evidence and reproduction steps: `docs/dx-findings.md`.
 ## Tests
 
 ```
-python3 -m pytest -q      # 24 tests, offline, fixtures from real responses in fixtures/
+python3 -m pytest -q      # 29 tests, offline, fixtures from real responses in fixtures/
 ```
 
 ## Data source
