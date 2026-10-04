@@ -36,6 +36,8 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
         raise ValueError("usd_amount must be positive")
     if slippage is not None and not (0 < slippage <= 100):
         raise ValueError("slippage is a percentage between 0 and 100")
+    if trigger_share_price is not None and pay_with not in ("USDT", "USDC", "BNB"):
+        raise ValueError("limit orders only take USDT, USDC or BNB (references/limit-order.md)")
     if pay_with == "BNB" and side == "BUY" and not (pay_price and pay_price > 0):
         raise ValueError("paying with BNB needs the BNB price in USD (pay_price) — `baw wallet balance` shows it")
     try:
@@ -91,6 +93,7 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
         try:
             trigger = per_token_trigger(trigger_share_price, r["multiplier"], r.get("multiplier_conflict", False))
             px = r["token_price"] or 0.0
+            trigger = float(f"{trigger:.6g}")          # the exact value the command will carry
             if px and ((side == "BUY" and trigger >= px) or (side == "SELL" and trigger <= px)):
                 action = CONFIRM if action != REFUSE else action
                 reasons = reasons + [f"Limit trigger ${trigger:,.2f} per token is already met (the token trades at "

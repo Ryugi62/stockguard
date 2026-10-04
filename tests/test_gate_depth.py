@@ -35,10 +35,11 @@ def test_audit_api_down_needs_acknowledgment():
     assert d.action == CONFIRM and "Token security audit is temporarily unavailable." in d.reasons
 
 
-def test_audit_risk_level_5_refuses_and_4_confirms():
+def test_audit_risk_levels_follow_the_skill_table():
     assert decide(ok(), 100, audit=AuditResult(True, risk_level=5)).action == REFUSE
-    d4 = decide(ok(), 100, audit=AuditResult(True, risk_level=4, hits=["Honeypot"]))
-    assert d4.action == CONFIRM and any("Honeypot" in r for r in d4.reasons)
+    d4 = decide(ok(), 100, audit=AuditResult(True, risk_level=4, hits=("Honeypot",)))
+    assert d4.action == REFUSE and any("Honeypot" in r for r in d4.reasons)       # 4 = "Avoid trading"
+    assert decide(ok(), 100, audit=AuditResult(True, risk_level=3)).action == CONFIRM  # 2-3 = "Exercise caution"
     assert decide(ok(), 100, audit=AuditResult(True, risk_level=1)).action == PROCEED
 
 

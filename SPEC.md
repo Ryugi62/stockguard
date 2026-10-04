@@ -3,7 +3,7 @@
 ## Purpose
 Tokenized stocks on BSC trade 24/7, but the underlying US stocks do not. Corporate actions (cash dividends, stock dividends, splits, earnings) pause or limit individual tokens, and each token represents `multiplier` shares, not exactly one share. A trading bot or a first-time user who ignores these facts buys at the wrong time, the wrong price, or the wrong quantity.
 
-StockGuard is a small safety layer that answers one question before any tokenized-stock trade — **"is this trade safe to place right now, and what am I really buying?"** — and exposes the answer three ways:
+StockGuard is a small safety layer that answers one question before any tokenized-stock trade — **"is this trade safe to place right now, and what am I really buying?"** — and exposes the answer through a library, MCP tools, a web page, the Agentic Wallet gate and a guarded-trade command:
 1. a Python library (`check_trade(...)`) for agents,
 2. an MCP-style JSON tool over stdio for LLM agents,
 3. a plain-language web page for non-crypto users ("Why can't I buy AAPL right now?").
@@ -72,4 +72,4 @@ Ubiquitous language: **Gate action** — `PROCEED | CONFIRM | ASK | REFUSE`. **W
 - No private keys handled by StockGuard (signing stays in the wallet / Agentic Wallet).
 
 ## Architecture
-`domain/` (pure rules, no I/O: guard, wallet_gate, issuers) ← `application/` (use cases: check, compare, scan, replay, gate_swap) ← `adapters/` (Binance public RWA HTTP client, BSC RPC, recorded offline client, `baw` command renderer, MCP stdio tools, web handler) ← `infrastructure/` (CLI entry points, demo).
+`domain/` (pure rules, no I/O: guard, wallet_gate, issuers) ← `application/` (use cases: check, compare, scan, replay, gate_swap) ← `adapters/` (Binance public RWA HTTP client, BSC RPC, recorded offline client, Agentic Wallet `baw` adapter (renderer + runner), MCP stdio tools, web handler) ← `infrastructure/` (CLI entry points, demo).

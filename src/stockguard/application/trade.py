@@ -35,15 +35,21 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
     sleep = sleep or _time.sleep
     st = wallet.status()
     if st != "CONNECTED":
+        if st and "BAW_NOT_FOUND" in str(st):
+            return {"stage": "preflight", "result": str(st).split("BAW_NOT_FOUND: ")[-1].rstrip(")")}
         return {"stage": "preflight", "result": f"Agentic Wallet is not ready (status {st}) — run `baw auth signin`"}
     cli = wallet.cli_ok("1.10.0") if hasattr(wallet, "cli_ok") else None
     if cli is False:
         return {"stage": "preflight", "result": "baw CLI is older than 1.10.0 (the skill's requiredCliVersion) — upgrade it"}
+    newer = wallet.skill_update("1.12.0") if hasattr(wallet, "skill_update") else None
     settings = wallet.settings()
     pay_price = wallet.price("BNB") if pay_with.upper() == "BNB" else None   # BUY sizing and SELL quote check
     gate = gate_swap(guard, ticker, usd_amount, side=side, pay_with=pay_with, settings=settings, auditor=auditor,
                      slippage=slippage, trigger_share_price=trigger_share_price, pay_price=pay_price, today=today,
                      token_qty=token_qty)
+    if newer:
+        gate["notes"].append(f"A newer binance-agentic-wallet skill ({newer}) is available; StockGuard was checked "
+                             f"against 1.12.0.")
     if settings is not None and settings.session_expires:
         gate["notes"].append(f"Wallet session expires at {settings.session_expires}.")
     gate["baw_commands"] = wallet.commands(gate)
@@ -70,10 +76,15 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
         return {"stage": "done", "gate": gate, "status": "LIMIT_PLACED", "strategy_id": sid,
                 "result": f"Limit order placed (strategyId {sid}) — placed, not filled. Check it with "
                           f"`baw limit-order list --strategyId {sid} --json`."}
+    if gate.get("slippage") is None:       # bind the swap to what the quote check accepted
+        gate["slippage"] = 1.0
+        gate["notes"].append("No slippage given: capped at 1% to match the quote check (instead of the wallet's \"auto\").")
+        gate["baw_commands"] = wallet.commands(gate)
     try:
         frm, to = wallet.quote(gate)
+        quoted_at = _time.time()
     except (KeyError, TypeError, ValueError) as e:
-        return {"stage": "quote", "gate": gate, "result": f"No usable quote from the wallet ({e})"}
+        return {"stage": "quote", "gate": gate, "result": f"No usable quote from the wallet — {e}"}
     if gate["pay_with"] == "BNB":              # the quote is in BNB; compare in dollars
         if gate["side"] == "BUY":
             frm = frm * (pay_price or 0)
@@ -85,9 +96,18 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
         return {"stage": "quote", **summary, "result": q.reason}
     if not confirm(summary):
         return {"stage": "confirm", **summary, "result": "Not confirmed — nothing was placed"}
-    oid = wallet.swap(gate)
-    if not oid:
-        return {"stage": "swap", **summary, "result": "The wallet did not return an orderId"}
+    if _time.time() - quoted_at > 30:      # the user took a while: re-quote before swapping
+        try:
+            frm2, to2 = wallet.quote(gate)
+        except (KeyError, TypeError, ValueError) as e:
+            return {"stage": "quote", **summary, "result": f"Re-quote failed — {e}"}
+        q2 = check_quote(gate["side"], frm2, to2, gate["token_price"])
+        if q2.level == REFUSE:
+            return {"stage": "quote", **summary, "result": "The price moved after confirmation: " + q2.reason}
+    try:
+        oid = wallet.swap(gate)
+    except ValueError as e:
+        return {"stage": "swap", **summary, "result": f"The wallet rejected the swap — {e}"}
     status, tx = "PENDING", None
     for _ in range(max_polls):     # an orderId is not a completed swap (market-order.md)
         status, tx = wallet.order_status(oid)

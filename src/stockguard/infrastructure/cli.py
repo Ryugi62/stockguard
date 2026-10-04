@@ -106,7 +106,10 @@ def _run(a, guard: Guard):
         print(json.dumps(guard.check(a.ticker, a.side, a.qty, a.threshold, usd_amount=a.usd), indent=2))
     elif a.cmd == "compare":
         rows = guard.compare(a.ticker, usd_amount=a.usd)
-        print(json.dumps([{k: r.get(k) for k in ("symbol", "issuer", "verdict", "risk", "multiplier", "token_price",
+        for r in rows:
+            r["multiplier_used"] = r["share_equivalent"] / r["token_qty"] if r.get("token_qty") else r["multiplier"]
+        print(json.dumps([{k: r.get(k) for k in ("symbol", "issuer", "verdict", "risk", "shares_label", "multiplier_used",
+                                                  "multiplier_conflict", "per_share_price", "per_share_spread", "token_price",
                                                   "token_qty", "share_equivalent", "session", "status", "reasons",
                                                   "data_notes", "contract")} for r in rows], indent=2))
     elif a.cmd == "gate":

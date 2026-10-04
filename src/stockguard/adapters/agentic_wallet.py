@@ -1,7 +1,8 @@
 """Agentic Wallet (`baw` CLI) adapter: parse `baw wallet settings --json`, render the exact commands for a gated swap.
 
 Syntax copied from binance-skills-hub/skills/binance-web3/binance-agentic-wallet/references/market-order.md
-(skill version 1.12.0). StockGuard prints these commands; it never runs them and never signs.
+(skill version 1.12.0), checked against the real `baw` 1.10.0 `--help`. `commands()` only renders; `BawRunner` /
+`AgenticWallet` run them for `stockguard trade` after the gate and the user's typed yes. Signing is always the wallet's.
 """
 import json
 import math
@@ -46,7 +47,12 @@ def parse_quote(raw: Dict):
 
 
 def _floor(x: float, places: int = 6) -> str:
-    return f"{math.floor(x * 10 ** places) / 10 ** places:.{places}f}"
+    return f"{math.floor(x * 10 ** places + 1e-6) / 10 ** places:.{places}f}"   # +1e-6: 0.3 must stay 0.300000
+
+
+def _price(x: float) -> str:
+    """Trigger prices keep 6 significant digits (ENLVon trades at $0.0265 per token)."""
+    return f"{x:.2f}" if x >= 1 else f"{float(f'{x:.6g}'):.10f}".rstrip("0")
 
 
 def _args(gate: Dict) -> str:
@@ -70,7 +76,7 @@ def commands(gate: Dict) -> List[str]:
     a = _args(gate)
     if gate.get("trigger_token_price"):
         side = "buy" if gate["side"] == "BUY" else "sell"
-        return [f"baw limit-order {side} --triggerPrice {gate['trigger_token_price']:.2f} {a}{_slip(gate)} --json",
+        return [f"baw limit-order {side} --triggerPrice {_price(gate['trigger_token_price'])} {a}{_slip(gate)} --json",
                 "baw limit-order list --strategyId <strategyId from the order> --json   # placed is not filled; if it was "
                 "rejected, stop and ask — never a market order"]
     return [f"baw market-order quote {a}{_slip(gate)} --json",
@@ -93,7 +99,13 @@ class BawRunner:
 
     def __call__(self, command: str) -> Dict:
         argv = command.split("#")[0].split()[1:]          # drop the leading "baw" and any trailing comment
-        out = self._run(argv)
+        try:
+            out = self._run(argv)
+        except FileNotFoundError as e:
+            return {"success": False, "error": {"name": "BAW_NOT_FOUND", "message": str(e)}}
+        except subprocess.TimeoutExpired:
+            return {"success": False, "error": {"name": "TIMEOUT", "message": "baw did not answer within 60 s — the "
+                    "order may have been submitted; check `baw market-order list` before retrying"}}
         try:
             return json.loads(out)
         except ValueError:
@@ -109,8 +121,18 @@ class AgenticWallet:
     def _data(r):
         return r.get("data") if isinstance(r, dict) else None
 
+    @staticmethod
+    def error(r) -> str:
+        """The CLI's own error, word for word (skill: "Report the error exactly as returned")."""
+        e = (r or {}).get("error") if isinstance(r, dict) else None
+        if isinstance(e, dict):
+            return f"{e.get('name', '')}: {e.get('message', '')}".strip(": ")
+        return str(e or (r or {}).get("raw") or "no response")
+
     def status(self):
-        return (self._data(self.baw("baw wallet status --json")) or {}).get("status")
+        r = self.baw("baw wallet status --json")
+        d = self._data(r)
+        return d.get("status") if d else f"unknown ({self.error(r)})"
 
     def settings(self):
         return parse_wallet_settings(self.baw("baw wallet settings --json"))
@@ -139,10 +161,21 @@ class AgenticWallet:
         return commands(gate)
 
     def quote(self, gate):
-        return parse_quote(self.baw(commands(gate)[0]))
+        r = self.baw(commands(gate)[0])
+        if not r.get("success"):
+            raise ValueError(self.error(r))
+        return parse_quote(r)
 
     def swap(self, gate):
-        return (self._data(self.baw(commands(gate)[1])) or {}).get("orderId")
+        r = self.baw(commands(gate)[1])
+        oid = (self._data(r) or {}).get("orderId")
+        if not oid:
+            raise ValueError(self.error(r))
+        return oid
+
+    def skill_update(self, current="1.12.0"):
+        d = self._data(self.baw(f"baw skill-check --skill-name binance-agentic-wallet --current-version {current} --json")) or {}
+        return d.get("latestSkillVersion") if d.get("needUpdateSkill") else None
 
     def order_status(self, order_id):
         rows = (self._data(self.baw(f"baw market-order list --orderId {order_id} --json")) or {}).get("list") or []

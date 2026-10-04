@@ -8,7 +8,7 @@ StockGuard's verdict is translated into the same vocabulary the Agentic Wallet a
   ALLOW                       -> PROCEED  (the skill's normal per-trade confirmation still applies)
   order > wallet quotaLeft    -> CONFIRM with the order cut (rounded down) to quotaLeft;  quotaLeft <= 0 -> REFUSE
 Token audit (query-token-audit skill, required by security.md §1): unavailable -> CONFIRM (acknowledge),
-riskLevel 5 or tax > 10% -> REFUSE, riskLevel 4 -> CONFIRM.
+riskLevel >= 4 or tax > 10% -> REFUSE, riskLevel 2-3 or tax 5-10% -> CONFIRM.
 """
 import math
 from dataclasses import dataclass, field
@@ -24,7 +24,9 @@ QUOTE_CONFIRM_GAP, QUOTE_REFUSE_GAP = 0.01, 0.05   # quote vs API token price: >
 AUDIT_UNAVAILABLE = "Security audit data is not available for this token on this chain."   # security.md, verbatim
 AUDIT_DOWN = "Token security audit is temporarily unavailable."                             # security.md, verbatim
 AUDIT_SKIPPED = "The token security audit was skipped on request — the user must explicitly acknowledge trading without it."
-AUDIT_DISCLAIMER = ('Audit note: LOW risk does NOT mean "safe." Audit results are point-in-time snapshots.')  # query-token-audit
+AUDIT_DISCLAIMER = ('LOW risk does NOT mean "safe." Audit results are point-in-time snapshots. Project teams can modify '
+                    'contracts or restrict liquidity after purchase. These risks cannot be predicted in advance.')  # verbatim
+AUDIT_VERIFY = "You may verify the contract address and chain, or try again later."   # query-token-audit, unavailable case
 
 
 @dataclass(frozen=True)
@@ -123,16 +125,18 @@ def decide(verdict: Verdict, requested_usd: float, settings: Optional[WalletSett
             d.action, d.confirmation_required = CONFIRM, True
             d.reasons.append(AUDIT_SKIPPED if audit.error == "skipped" else AUDIT_DOWN if audit.error else AUDIT_UNAVAILABLE)
             d.notes.append("The wallet skill requires the user's explicit acknowledgment before trading without an audit.")
+            if not audit.error:
+                d.notes.append(AUDIT_VERIFY)
         else:
             d.notes.append(AUDIT_DISCLAIMER)
             tax = max(audit.buy_tax or 0.0, audit.sell_tax or 0.0)
-            if (audit.risk_level or 0) >= 5 or tax > 10:
+            if (audit.risk_level or 0) >= 4 or tax > 10:   # skill: 4 = "Avoid trading", 5 = "Block", tax >10% critical
                 return GateDecision(REFUSE, requested_usd, 0.0, d.reasons + [
-                    f"Token audit: riskLevel {audit.risk_level}, tax {tax:g}% — do not proceed"] + list(audit.hits), d.notes)
-            if (audit.risk_level or 0) >= 4 or tax > 5:
+                    f"Token audit: riskLevel {audit.risk_level}, tax {tax:g}% — avoid trading"] + list(audit.hits), d.notes)
+            if (audit.risk_level or 0) >= 2 or tax > 5:     # 2-3 = "Exercise caution", tax 5-10% = warning
                 d.action, d.confirmation_required = CONFIRM, True
-                d.reasons.append(f"Token audit: high risk (riskLevel {audit.risk_level}, tax {tax:g}%): "
-                                 + ", ".join(audit.hits))
+                d.reasons.append(f"Token audit: caution (riskLevel {audit.risk_level}, tax {tax:g}%)"
+                                 + (": " + ", ".join(audit.hits) if audit.hits else ""))
     if settings is not None:
         if settings.quota_left is not None and settings.quota_left <= 0:
             return GateDecision(REFUSE, requested_usd, 0.0,

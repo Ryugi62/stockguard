@@ -69,7 +69,7 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 
 ## F14. The wallet's mandatory token audit can't see tokenized stocks
 - Reproduce: `curl -X POST https://web3.binance.com/bapi/defi/v1/public/wallet-direct/security/token/audit -H 'Content-Type: application/json' -H 'source: agent' -H 'User-Agent: binance-web3/1.4 (Skill)' -d '{"binanceChainId":"56","contractAddress":"0x7048f5227b032326cc8dbc53cf3fddd947a2c757","requestId":"<uuid4>"}'`
-- 45 of 45 sampled stock tokens (the first 15 of each issuer's list, 2026-10-04, raw `data/audit-sample-20261004.jsonl` via `scripts/audit_sample.py`) returned `hasResult: false, isSupported: false, riskLevel: -1`. USDT returned `hasResult: true, riskLevel: 3` (MEDIUM).
+- Full run 2026-10-04 05:10–05:15 UTC over all 675 BSC stock tokens (raw `data/audit-all-20261004.jsonl`, `PYTHONPATH=src python3 scripts/audit_sample.py --n 0 --out …`): 663 returned `hasResult: false, isSupported: false, riskLevel: -1` — all 458 Ondo, all 130 xStocks, 75 of 87 bStocks. The 12 bStocks with data (GPROB, RDDTB, CYPHB, AGPUB, AMCB, ZMB, HPEB, ADBEB, SHAZB, FWDIB, PDDB, WENB) were all `riskLevel 0`. USDT returned `hasResult: true, riskLevel: 3` (MEDIUM), last line of the same file.
 - The Agentic Wallet skill (`references/security.md` §1) requires this audit before every `market-order swap` / `limit-order`, and when it is unavailable it requires "explicit user acknowledgment". So every tokenized-stock order an agent places ends in an acknowledgment prompt that carries no information about the stock. StockGuard is built to supply the stock-specific checks that the audit does not cover.
 - Recorded responses for the demo tokens: `fixtures/recorded/demo-2026-10-04.json` → `audit`.
 
@@ -88,7 +88,7 @@ Reading guide for the report: F1, F2, F6 and F12 are one theme — **how far can
 
 ## Still to write from first-hand use (the human report must cover these)
 - Onboarding time from opening the docs to the first successful call, and where it stalled.
-- AI stack section: Agentic Wallet / Wallet Skills / CLI install and use (not used in this build — needs sign-in).
+- AI stack section: Agentic Wallet / Wallet Skills / CLI — `baw` 1.10.0 is installed and wired into `stockguard trade` (F15); a signed-in run is still needed for first-hand sign-in, quote and swap experience.
 - Transaction API dry-run pitfalls (needs an API key from the developer portal).
 - Redesign suggestions and requested capabilities (candidates from this log: `referenceSource` field, `offhours` in the enum, a per-token `isTradeable` boolean, populated kline volume, one `sharesPerToken` value served identically by list and dynamic, a per-issuer `marketStatus` that is never null).
 

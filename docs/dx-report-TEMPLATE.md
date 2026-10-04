@@ -22,7 +22,7 @@ Evidence you can cite for each change (facts only — choose, don't copy):
 - Ticker → token resolution → F13 (38 tickers under all three issuers; NFLX = 10 shares on Ondo, 1 on bStocks); the tokenized-securities skill only knows `type=1` — screenshot `screenshots/01-web-nflx-is-three-tokens.png`
 - Enum drift → F2 (`offhours` missing from the documented enum, SKILL.md L328)
 - Liquidity signal → F7 (kline volume always "0")
-- Agent safety → F14 (the wallet's required token audit returns no data for 45/45 stock tokens, so every agent order ends in an empty acknowledgment); `limit-order --triggerPrice` is per token (10× off on NFLXon)
+- Agent safety → F14 (the wallet's required token audit returns no data for 663 of 675 stock tokens, so every agent order ends in an empty acknowledgment); `limit-order --triggerPrice` is per token (10× off on NFLXon)
 
 ## 2. Time from opening the docs to the first successful call, and where we got stuck
 
@@ -70,7 +70,7 @@ Each one can be reproduced from a fresh clone with no key. Results move a little
 | F11 | scan → `token_price == null`, issuer xStocks | a token price | 77/130 |
 | F12 | scan → `stock_price == null`, issuer bStocks | a stock price | 87/87 |
 | F13 | `PYTHONPATH=src python3 -m stockguard check NFLX` | — | three tokens, NFLXon 10 shares, NFLXB 1 share → StockGuard asks |
-| F14 | the `curl` in `docs/dx-findings.md` F14 | audit result for a listed token | `hasResult: false, isSupported: false` on 45/45 stock tokens |
+| F14 | the `curl` in `docs/dx-findings.md` F14 | audit result for a listed token | `hasResult: false, isSupported: false` on 663/675 stock tokens (`data/audit-all-20261004.jsonl`) |
 
 ✍ Which of these actually cost you time, and how much? Which one surprised you most?
 

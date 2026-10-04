@@ -53,7 +53,8 @@ def run_demo(guard: Guard, live: bool = False, out=print, auditor=None) -> None:
     for line in _gate_block(k):
         out(line)
     if k.get("audit") and not k["audit"]["available"]:
-        out("     (the wallet skill's mandatory token audit has no data for tokenized stocks, so the user must acknowledge)")
+        out("     (the wallet skill's mandatory token audit has no data for 663 of 675 stock tokens, so the user must acknowledge;")
+        out("      StockGuard puts its stock warnings into that same confirmation)")
     out("")
     out('5) "Sell my NFLXon when Netflix hits $75":  stockguard gate NFLXon --usd 200 --side SELL --trigger-share-price 75')
     lim = gate_swap(guard, "NFLXon", 200, side="SELL", trigger_share_price=75, auditor=auditor)
@@ -70,11 +71,11 @@ def run_demo(guard: Guard, live: bool = False, out=print, auditor=None) -> None:
         for line in _gate_block(gate_swap(guard, "SPLITDEMOon", 1000), max_reasons=1):
             out(line)
         out("")
-    out("7) The wallet's own limits count too (example `baw wallet settings --json`: quotaLeft $250)")
+    out(f"{6 if live else 7}) The wallet's own limits count too (example `baw wallet settings --json`: quotaLeft $250)")
     q = gate_swap(guard, "AAPLon", 500, settings=parse_wallet_settings(SAMPLE_WALLET_SETTINGS), slippage=1.0)
     out(f"   → {q['action']}  (approved {_usd(q['approved_usd'])} of {_usd(q['requested_usd'])}): {q['reasons'][-1]}")
     out("")
     out("With a signed-in Agentic Wallet, `stockguard trade KLACon --usd 5` runs it end to end: preflight → gate →")
     out("the wallet's quote re-checked against the token price → your typed yes → swap → poll until FINISHED/FAILED.")
     out("Same checks as a web page: stockguard serve   ·   as MCP tools for agents: stockguard mcp")
-    out("Live data instead of the recording: python3 demo.py --live")
+    out("Recorded data instead: python3 demo.py" if live else "Live data instead of the recording: python3 demo.py --live")

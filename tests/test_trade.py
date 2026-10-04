@@ -48,7 +48,7 @@ def test_full_path_polls_to_finished_and_returns_tx():
     r = trade(fake)
     assert r["stage"] == "done" and r["status"] == "FINISHED" and r["tx_hash"] == "0xabc"
     order = [c.split(" --")[0] for c in fake.calls]
-    assert order[:3] == ["wallet status", "cli-check", "wallet settings"]
+    assert order[:2] == ["wallet status", "cli-check"] and "wallet settings" in order
     assert order.index("market-order quote") < order.index("market-order swap")
     assert order[-1].startswith("market-order list")
 

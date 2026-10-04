@@ -100,7 +100,7 @@ class Verdict:
 LARGE_FLOAT_SHARE = 0.01   # an order bigger than 1% of all tokens in existence is unusually large for this token
 
 # Risk weights (documented; additive, capped at 100). They rank warnings, they are not probabilities.
-RISK_WEIGHTS = {"halt_or_pause_or_no_token_price_or_price_off_25pct": 100, "multiplier_conflict": 30, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
+RISK_WEIGHTS = {"halt_or_pause_or_no_token_price_or_price_off_25pct": 100, "multiplier_conflict": 40, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
                 "multiplier": "up to 30, grows with |log10(multiplier)|", "multiplier_missing": 30,
                 "premium": "1 point per 0.1% beyond threshold, max 40", "no_session_reported": 10,
                 "no_independent_price": 15}
@@ -146,7 +146,7 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
     elif s.multiplier_conflict:
         v.raise_to(WARN, f"The API gives two different multipliers for this token (token list: {s.list_multiplier:.4g}, "
                          f"price feed: {s.multiplier:.4g}) — the real share count is uncertain; size the order in dollars "
-                         f"and check the issuer's terms"); v.add_risk(30)
+                         f"and check the issuer's terms"); v.add_risk(40)   # >= CONFIRM_AT even when supply is unknown
     elif abs(s.multiplier - 1.0) > 0.05:
         msg = f"1 token = {s.multiplier:.4g} shares — compare prices per token, not per share"
         if sized_in_usd:
