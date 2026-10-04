@@ -48,3 +48,9 @@ class TokenAuditClient:
                                                       "requestId": str(uuid.uuid4())}))
         except Exception as e:      # skill: unreachable -> tell the user and require acknowledgment
             return AuditResult(available=False, error=type(e).__name__)
+
+
+class SkippedAudit:
+    """--no-audit: the skip is never silent (security.md: "Never silently skip")."""
+    def audit(self, address: str) -> AuditResult:
+        return AuditResult(available=False, error="skipped")

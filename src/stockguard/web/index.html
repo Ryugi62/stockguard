@@ -104,6 +104,7 @@ $("f").addEventListener("submit", async (e) => {
         ${naive && !d.multiplier_conflict ? `<p class="trap">A bot that reads the per-share price as the token price would have bought <b>${money(naive)}</b> of ${esc(d.ticker)} instead of ${money(usd)}.</p>` : ""}
         ${d.onchain_supply ? `<p class="muted">On BNB Chain right now: ${Number(d.onchain_supply.toPrecision(6)).toLocaleString()} ${esc(d.symbol)} tokens in total (read from the token contract). Your order is ${(d.order_share_of_supply * 100).toFixed(2)}% of them — the issuer can mint more, so this is a size check, not market depth.</p>` : ""}
         ${d.next_open_ms && d.session !== "regular" ? `<p class="muted">Next trading session opens around ${esc(fmtTime(d.next_open_ms))}.</p>` : ""}
+        ${d.agent_gate ? `<p class="trap" style="background:rgba(49,130,246,.10)"><b>If an AI agent placed this order through Binance Agentic Wallet:</b> StockGuard would answer <b>${esc(d.agent_gate.action)}</b>${d.agent_gate.reasons.length ? " — " + d.agent_gate.reasons.map(esc).join(" · ") : "."}</p>` : ""}
         <p class="muted">Token contract on BNB Chain: <code>${esc(d.contract)}</code> (${esc(d.issuer || "")}) — check this address in your wallet before buying. Agents: <code>stockguard gate ${esc(d.symbol)} --usd ${usd}</code></p>
         ${d.attestation_daily ? `<p class="muted">${esc(d.name || d.symbol)} — issuer's <a href="${esc(d.attestation_daily)}" target="_blank" rel="noopener">daily attestation report</a> (proof the tokens are backed by real shares).</p>` : ""}
       </div>`;

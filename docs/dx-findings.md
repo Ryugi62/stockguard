@@ -69,9 +69,13 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 
 ## F14. The wallet's mandatory token audit can't see tokenized stocks
 - Reproduce: `curl -X POST https://web3.binance.com/bapi/defi/v1/public/wallet-direct/security/token/audit -H 'Content-Type: application/json' -H 'source: agent' -H 'User-Agent: binance-web3/1.4 (Skill)' -d '{"binanceChainId":"56","contractAddress":"0x7048f5227b032326cc8dbc53cf3fddd947a2c757","requestId":"<uuid4>"}'`
-- 45 of 45 sampled stock tokens (the first 15 of each issuer's list, 2026-10-04) returned `hasResult: false, isSupported: false, riskLevel: -1`. USDT returned `hasResult: true, riskLevel: 3` (MEDIUM).
+- 45 of 45 sampled stock tokens (the first 15 of each issuer's list, 2026-10-04, raw `data/audit-sample-20261004.jsonl` via `scripts/audit_sample.py`) returned `hasResult: false, isSupported: false, riskLevel: -1`. USDT returned `hasResult: true, riskLevel: 3` (MEDIUM).
 - The Agentic Wallet skill (`references/security.md` §1) requires this audit before every `market-order swap` / `limit-order`, and when it is unavailable it requires "explicit user acknowledgment". So every tokenized-stock order an agent places ends in an acknowledgment prompt that carries no information about the stock. StockGuard is built to supply the stock-specific checks that the audit does not cover.
 - Recorded responses for the demo tokens: `fixtures/recorded/demo-2026-10-04.json` → `audit`.
+
+## F15. Notes from installing `baw` (npm `@binance/agentic-wallet` 1.10.0, not signed in)
+- `--json` is a global option: it is not listed in each subcommand's `--help` (`baw market-order swap --help`), only in `baw --help`. The skill says to "Always append `--json`", and it works after the subcommand.
+- Without signing in, `wallet status` answers `{"success": true, "data": {"status": "UNCONNECTED"}}`, but `market-order quote` fails with `NOT_LOGGED_IN` (code 10003000). So a read-only price quote needs a signed-in wallet. Raw output: `fixtures/baw/`.
 
 ## Latency (2026-10-04 04:43 UTC, n=10 per endpoint, `PYTHONPATH=src python3 scripts/latency.py`, raw `data/latency-20261004.json`)
 - p50 74–111 ms, p95 130–189 ms, max 424 ms (list type=2). The `list` call is the slowest. A full 675-token scan takes 13.8 s with 8 workers.

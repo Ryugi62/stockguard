@@ -1,0 +1,8 @@
+{
+  "success": false,
+  "error": {
+    "code": 10003000,
+    "name": "NOT_LOGGED_IN",
+    "message": "Not logged in"
+  }
+}

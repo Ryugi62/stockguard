@@ -7,12 +7,12 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from stockguard.application.service import AmbiguousTicker, TickerNotFound
 
-ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "web"))
+ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "web"))   # packaged with stockguard
 CACHE_TTL = 30.0
 CACHE_MAX = 512
 
 
-def make_handler(guard):
+def make_handler(guard, auditor=None):
     cache = {}
 
     class H(BaseHTTPRequestHandler):
@@ -51,6 +51,13 @@ def make_handler(guard):
                     return self._json(400, {"error": str(e)})
                 except Exception as e:
                     return self._json(502, {"error": "Upstream data unavailable", "detail": str(e)[:200]})
+                try:   # what an AI agent would be told for the same order (same words as the gate)
+                    from stockguard.application.wallet_gate import gate_swap
+                    if r.get("usd_amount"):
+                        gt = gate_swap(guard, r["contract"], r["usd_amount"], side=key[1], auditor=auditor)
+                        r["agent_gate"] = {"action": gt["action"], "reasons": gt["reasons"][:3]}
+                except Exception:
+                    pass
                 if len(cache) >= CACHE_MAX:
                     cache.pop(min(cache, key=lambda k: cache[k][0]))
                 cache[key] = (time.time(), r)
@@ -74,7 +81,7 @@ def make_handler(guard):
     return H
 
 
-def serve(guard, port=8787):
-    srv = ThreadingHTTPServer(("127.0.0.1", port), make_handler(guard))
+def serve(guard, port=8787, auditor=None):
+    srv = ThreadingHTTPServer(("127.0.0.1", port), make_handler(guard, auditor))
     print(f"StockGuard on http://127.0.0.1:{port}")
     srv.serve_forever()

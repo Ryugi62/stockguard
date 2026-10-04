@@ -1,0 +1,69 @@
+baw 1.10.0 (npm @binance/agentic-wallet, installed locally 2026-10-04, not signed in)
+
+Usage: baw market-order swap [options]
+
+Swap tokens on DEX (market order)
+
+Options:
+  --fromTokenQty <fromTokenQty>      Amount to swap
+  --fromToken <fromToken>            Source token address
+  --toToken <toToken>                Destination token address
+  --slippage <slippage>              Slippage tolerance: "auto" (default) or
+                                     0-100
+  --mev <mev>                        MEV protection: true (default) or false
+                                     (default: "true")
+  --gasLevel <gasLevel>              Gas level: LOW, MEDIUM (default), HIGH
+                                     (default: "MEDIUM")
+  --binanceChainId <binanceChainId>  Binance chain ID
+  -h, --help                         display help for command
+
+Examples:
+  baw market-order swap --binanceChainId 56 --fromTokenQty 1.3 --fromToken 0x... --toToken 0x...
+  baw market-order swap --binanceChainId 56 --fromTokenQty 10 --fromToken 0x55d3...7955 --toToken 0xeeee...eeee
+  baw market-order swap --binanceChainId 56 --fromTokenQty 1 --fromToken 0x... --toToken 0x... --mev false --gasLevel HIGH
+
+
+
+Usage: baw market-order quote [options]
+
+Get a swap quote for token exchange
+
+Options:
+  --fromTokenQty <fromTokenQty>      Amount to swap
+  --fromToken <fromToken>            Source token address
+  --toToken <toToken>                Destination token address
+  --slippage <slippage>              Slippage tolerance: "auto" (default) or
+                                     0-100
+  --binanceChainId <binanceChainId>  Binance chain ID
+  -h, --help                         display help for command
+
+Examples:
+  baw market-order quote --binanceChainId 56 --fromTokenQty 1.5 --fromToken 0x... --toToken 0x...
+  baw market-order quote --binanceChainId 56 --fromTokenQty 100 --fromToken 0x55d3...7955 --toToken 0xeeee...eeee
+  baw market-order quote --binanceChainId 56 --fromTokenQty 10 --fromToken 0x... --toToken 0x... --slippage 1
+
+
+
+Usage: baw limit-order sell [options]
+
+Create a limit sell order (sell token at trigger price)
+
+Options:
+  --triggerPrice <triggerPrice>      Trigger price in USD (e.g., $100 or 100)
+  --fromTokenQty <fromTokenQty>      Amount of tokens to sell
+  --fromToken <fromToken>            Token to sell (address)
+  --toToken <toToken>                Destination token address
+  --slippage <slippage>              Slippage tolerance: "auto" (default) or
+                                     0-100
+  --gasLevel <gasLevel>              Gas level: LOW, MEDIUM (default), HIGH
+                                     (default: "MEDIUM")
+  --mev <mev>                        MEV protection: true (default) or false
+                                     (default: "true")
+  --binanceChainId <binanceChainId>  Binance chain ID
+  -h, --help                         display help for command
+
+Examples:
+  baw limit-order sell --binanceChainId 56 --triggerPrice $100 --fromTokenQty 10.1 --fromToken 0x... --toToken 0x55d3...7955
+  baw limit-order sell --binanceChainId 56 --triggerPrice $100 --fromTokenQty 10.1 --fromToken 0x... --toToken 0xeeee...eeee
+
+

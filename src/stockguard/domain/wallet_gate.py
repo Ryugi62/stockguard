@@ -23,6 +23,8 @@ QUOTE_CONFIRM_GAP, QUOTE_REFUSE_GAP = 0.01, 0.05   # quote vs API token price: >
 
 AUDIT_UNAVAILABLE = "Security audit data is not available for this token on this chain."   # security.md, verbatim
 AUDIT_DOWN = "Token security audit is temporarily unavailable."                             # security.md, verbatim
+AUDIT_SKIPPED = "The token security audit was skipped on request — the user must explicitly acknowledge trading without it."
+AUDIT_DISCLAIMER = ('Audit note: LOW risk does NOT mean "safe." Audit results are point-in-time snapshots.')  # query-token-audit
 
 
 @dataclass(frozen=True)
@@ -78,6 +80,7 @@ class WalletSettings:
     abnormal_handling: Optional[str] = None   # AutoReject | NeedConfirmation
     trade_all_tokens: Optional[bool] = None   # False -> allow-listed tokens only
     quota_date: Optional[str] = None          # the day quotaLeft applies to (YYYY-MM-DD)
+    session_expires: Optional[str] = None     # sessionExpireTime
 
 
 @dataclass
@@ -114,10 +117,14 @@ def decide(verdict: Verdict, requested_usd: float, settings: Optional[WalletSett
         d.notes += [f"Heads-up to show the user: {r}" for r in verdict.reasons]
     if audit is not None:
         if not audit.available:
+            if d.action != CONFIRM and verdict.level == WARN:      # the stock warnings go into the confirmation text
+                d.reasons = list(verdict.reasons) + d.reasons
+                d.notes = [n for n in d.notes if not n.startswith("Heads-up")]
             d.action, d.confirmation_required = CONFIRM, True
-            d.reasons.append(AUDIT_DOWN if audit.error else AUDIT_UNAVAILABLE)
+            d.reasons.append(AUDIT_SKIPPED if audit.error == "skipped" else AUDIT_DOWN if audit.error else AUDIT_UNAVAILABLE)
             d.notes.append("The wallet skill requires the user's explicit acknowledgment before trading without an audit.")
         else:
+            d.notes.append(AUDIT_DISCLAIMER)
             tax = max(audit.buy_tax or 0.0, audit.sell_tax or 0.0)
             if (audit.risk_level or 0) >= 5 or tax > 10:
                 return GateDecision(REFUSE, requested_usd, 0.0, d.reasons + [

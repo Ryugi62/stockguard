@@ -31,8 +31,13 @@ def run_demo(guard: Guard, live: bool = False, out=print, auditor=None) -> None:
     out('1) A person asks: "Can I buy $1,000 of Netflix right now?"')
     cands = guard.describe(guard.tokens_candidates("NFLX"))
     out(f"   NFLX is {len(cands)} different tokens on BNB Chain — StockGuard asks which one instead of guessing:")
+    rows = {r["symbol"]: r for r in guard.compare("NFLX", usd_amount=1000)}
     for c in cands:
-        out(f"   {c['symbol']:<8} {c['issuer']:<20} 1 token = {c['shares_label']}")
+        r = rows.get(c["symbol"], {})
+        per = f"${r['per_share_price']:,.2f}/share" if r.get("per_share_price") else "no price"
+        spread = f" (+{r['per_share_spread'] * 100:.1f}%)" if r.get("per_share_spread") else ""
+        out(f"   {c['symbol']:<8} {c['issuer']:<20} 1 token = {c['shares_label']:<40} {per}{spread}")
+    out("   Same share, three prices. The per-share price also settles NFLXx: $71.30 per token only makes sense as 1 share.")
     out("")
     on = guard.check("NFLXon", usd_amount=1000)
     out(f"2) They pick NFLXon:  stockguard check NFLXon --usd 1000")
@@ -53,10 +58,12 @@ def run_demo(guard: Guard, live: bool = False, out=print, auditor=None) -> None:
     out('5) "Sell my NFLXon when Netflix hits $75":  stockguard gate NFLXon --usd 200 --side SELL --trigger-share-price 75')
     lim = gate_swap(guard, "NFLXon", 200, side="SELL", trigger_share_price=75, auditor=auditor)
     if lim.get("trigger_token_price"):
-        out(f"   `baw limit-order --triggerPrice` is the TOKEN price: $75/share × 10 = ${lim['trigger_token_price']:,.2f}/token."
+        out(f"   `baw limit-order --triggerPrice` is the TOKEN price: $75/share × {lim['multiplier']:.4g} = ${lim['trigger_token_price']:,.2f}/token."
             f" Sent as $75, the trigger is already met (the token trades near ${lim['token_price']:,.0f}), so it would sell now instead of waiting.")
     for line in _gate_block(lim, max_reasons=1):
         out(line)
+    out("   (No audit needed: a SELL's target is USDT. The skill quotes an `Ondo-related tokens cannot be traded` error for")
+    out("    limit orders — if the wallet rejects it, `trade` stops and never falls back to a market order.)")
     out("")
     if not live:
         out("6) Scenario (SPLITDEMOon is synthetic, not live data): the token is paused for a stock split")

@@ -23,25 +23,26 @@ TOOL = {
 
 GATE_TOOL = {
     "name": "guard_agentic_wallet_swap",
-    "description": ("Call this BEFORE any Binance Agentic Wallet `baw market-order swap` of a tokenized US stock on BNB "
-                    "Chain. Returns PROCEED, CONFIRM (show the reasons and get an explicit yes), ASK (the ticker is "
+    "description": ("Call this BEFORE any Binance Agentic Wallet `baw market-order swap` or `baw limit-order buy|sell` "
+                    "of a tokenized US stock on BNB Chain. Returns PROCEED, CONFIRM (show the reasons and get an explicit yes), ASK (the ticker is "
                     "several tokens — ask which issuer) or REFUSE (do not trade), plus the exact baw quote/swap/poll "
-                    "commands sized in the right units. Pass the output of `baw wallet settings --json` as "
+                    "(or limit-order) commands sized in the right units, with the token audit result. Pass the output of `baw wallet settings --json` as "
                     "wallet_settings to respect the wallet's daily quota and allowed-token list. Never signs."),
     "inputSchema": {
         "type": "object",
         "properties": {
             "ticker": {"type": "string", "description": "Token symbol (NFLXon, NFLXx, NFLXB), ticker or contract"},
             "usd_amount": {"type": "number", "description": "Order size in US dollars"},
+            "token_qty": {"type": "number", "description": "SELL only: size in tokens instead of usd_amount"},
             "side": {"type": "string", "enum": ["BUY", "SELL"], "default": "BUY"},
-            "pay_with": {"type": "string", "enum": ["USDT", "USDC", "USD1", "U"], "default": "USDT"},
+            "pay_with": {"type": "string", "enum": ["USDT", "USDC", "USD1", "U", "BNB"], "default": "USDT"},
             "wallet_settings": {"type": "object", "description": "Output of `baw wallet settings --json` (optional)"},
             "slippage": {"type": "number", "description": "Percent; omitted = the wallet's \"auto\" (disclosed)"},
             "trigger_share_price": {"type": "number", "description": "Limit order at this price per SHARE; the tool "
                                                                     "returns the per-TOKEN trigger for `baw limit-order`"},
             "pay_price": {"type": "number", "description": "USD price of BNB when pay_with is BNB"},
         },
-        "required": ["ticker", "usd_amount"],
+        "required": ["ticker"],
     },
 }
 
@@ -50,7 +51,8 @@ def _gate(guard, a, auditor=None):
     import time
     from stockguard.adapters.agentic_wallet import commands, parse_wallet_settings
     from stockguard.application.wallet_gate import gate_swap
-    out = gate_swap(guard, a["ticker"], float(a["usd_amount"]), side=a.get("side", "BUY"),
+    out = gate_swap(guard, a["ticker"], float(a["usd_amount"]) if a.get("usd_amount") else None,
+                    side=a.get("side", "BUY"), token_qty=a.get("token_qty"),
                     pay_with=a.get("pay_with", "USDT"), settings=parse_wallet_settings(a.get("wallet_settings")),
                     auditor=auditor, slippage=a.get("slippage"), trigger_share_price=a.get("trigger_share_price"),
                     pay_price=a.get("pay_price"), today=time.strftime("%Y-%m-%d", time.gmtime()))
@@ -68,9 +70,10 @@ def handle(guard, msg, auditor=None):
     elif method == "tools/call" and params.get("name") == GATE_TOOL["name"]:
         a = params.get("arguments") or {}
         if not isinstance(a.get("ticker"), str) or not a["ticker"].strip() \
-                or not isinstance(a.get("usd_amount"), (int, float)) or a["usd_amount"] <= 0:
+                or not ((isinstance(a.get("usd_amount"), (int, float)) and a["usd_amount"] > 0)
+                        or (isinstance(a.get("token_qty"), (int, float)) and a["token_qty"] > 0)):
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602,
-                    "message": "arguments 'ticker' (string) and 'usd_amount' (positive number) are required"}}
+                    "message": "arguments 'ticker' (string) and 'usd_amount' or 'token_qty' (positive number) are required"}}
         try:
             res = {"content": [{"type": "text", "text": json.dumps(_gate(guard, a, auditor))}], "isError": False}
         except ValueError as e:

@@ -2,7 +2,9 @@
 
 **"Can I trade this tokenized stock right now — and what am I really buying?"**
 
-A pre-trade safety layer for tokenized US stocks on BNB Chain, for people and for AI agents. It sits **in front of Binance Agentic Wallet**: before an agent calls `baw market-order swap` or `baw limit-order`, StockGuard answers `PROCEED`, `CONFIRM`, `ASK` or `REFUSE`, with plain-English reasons and the exact wallet commands in the right units. With a signed-in wallet, `stockguard trade` drives the whole order: preflight, gate, a re-check of the wallet's own quote, the user's typed yes, the swap, and polling until the order finishes or fails.
+A pre-trade safety layer for tokenized US stocks on BNB Chain, for people and for AI agents. It sits **in front of Binance Agentic Wallet**: before an agent calls `baw market-order swap` or `baw limit-order`, StockGuard answers `PROCEED`, `CONFIRM`, `ASK` or `REFUSE`, with plain-English reasons and the exact wallet commands in the right units. `stockguard trade` is built to drive the whole order with a signed-in wallet: preflight, gate, a re-check of the wallet's own quote, the user's typed yes, the swap, and polling until the order finishes or fails. It is tested against a fake `baw` and against real unsigned `baw` 1.10.0 output; a live signed run is still to come (see the end of this page).
+
+Why it is needed: the Agentic Wallet skill requires a token security audit before every swap, and that audit returned **no data for 45 of 45 tokenized stocks** we sampled (F14). The stock-specific risks it can't see are the ones StockGuard checks.
 
 Covers all three issuers on BNB Chain, read through the Binance Web3 RWA Data API and the Token Security Audit API: **Ondo Global Markets** (`…on`, 458 tokens), **xStocks** (`…x`, 130) and **bStocks** (`…B`, 87).
 
@@ -14,20 +16,20 @@ python3 demo.py            # no install, no API key, no wallet, no network
 python3 demo.py --live     # the same walkthrough on live public data
 ```
 
-`demo.py` replays **recorded real responses** (`fixtures/recorded/demo-2026-10-04.json`, captured 2026-10-04 04:39 UTC by `scripts/record_demo_fixtures.py`). It runs in under a second. One token in it, `SPLITDEMOon`, is synthetic and labelled as such everywhere: it shows the stock-split `REFUSE` path, which can't be observed on a weekend. Python ≥3.9, standard library only.
+`demo.py` replays **recorded real responses** (`fixtures/recorded/demo-2026-10-04.json`, captured 2026-10-04 04:54 UTC by `scripts/record_demo_fixtures.py`). It runs in under a second. One token in it, `SPLITDEMOon`, is synthetic and labelled as such everywhere: it shows the stock-split `REFUSE` path, which can't be observed on a weekend. Python ≥3.9, standard library only.
 
 What the demo shows:
-1. "NFLX" is three different tokens: NFLXon is 10 Netflix shares per token, NFLXB is 1, and NFLXx is 1 or 10 depending on which endpoint you ask. StockGuard asks which one you mean instead of guessing.
+1. "NFLX" is three different tokens: NFLXon is 10 Netflix shares per token, NFLXB is 1, and NFLXx is 1 or 10 depending on which endpoint you ask. StockGuard asks which one you mean instead of guessing. It also shows the price per share: $67.06, $71.30 and $67.59 for the same share (6.3% apart), and $71.30 per token only makes sense for NFLXx if it is 1 share.
 2. `check NFLXon --usd 1000` → `WARN`: the US market is closed and the quoted stock price is derived from the token price itself.
 3. An agent buying NFLXx → `REFUSE` on real data: the API gives two multipliers, and its supply (10,000) disagrees with the chain (100,000). No wallet command is emitted.
 4. KLACon → `CONFIRM` with the `baw` quote and swap commands. The wallet skill's mandatory token audit has no data for any tokenized stock, so the user has to acknowledge.
-5. "Sell when Netflix hits $75" → `baw limit-order sell --triggerPrice 750.00`. The trigger is per token, and NFLXon is 10 shares, so a $75 trigger would fire immediately.
+5. "Sell when Netflix hits $75" → `baw limit-order sell --triggerPrice 750.00`. The trigger is per token, and NFLXon is 10 shares, so a $75 trigger would fire immediately. The gate also flags any trigger that is already met. The skill quotes an `Ondo-related tokens cannot be traded` error for limit orders; if the wallet rejects one, `trade` stops and never falls back to a market order.
 6. A token paused for a stock split → `REFUSE` (synthetic scenario token).
 7. The wallet's own `quotaLeft` is $250 → the order is cut from $500 to $250.
 
 Every command also takes `--offline`, and `STOCKGUARD_OFFLINE=1` does the same.
 
-## Four ways to use it
+## Five ways to use it
 
 | Surface | For | Command (after `pip install -e .`, or `PYTHONPATH=src python3 -m stockguard …`) |
 |---|---|---|
@@ -35,7 +37,7 @@ Every command also takes `--offline`, and `STOCKGUARD_OFFLINE=1` does the same.
 | Guarded trade | a person with a signed-in Agentic Wallet | `stockguard trade KLACon --usd 5` (runs `baw`; the wallet signs under its own limits) |
 | MCP tools `guard_agentic_wallet_swap`, `check_tokenized_stock_trade` | LLM agents | `stockguard mcp` (stdio) |
 | Web page | non-crypto users ("Why can't I buy NFLX right now?") | `stockguard serve` → http://127.0.0.1:8787 |
-| CLI / library | bots, scripts | `stockguard check NFLXon --usd 1000` · `stockguard compare NFLX` |
+| CLI / library | bots, scripts | `stockguard check NFLXon --usd 1000` · `stockguard compare NFLX` (per-issuer terms and per-share prices) |
 
 ## The Agentic Wallet gate (`src/stockguard/domain/wallet_gate.py`)
 
@@ -44,10 +46,11 @@ StockGuard never signs. `gate` prints the wallet commands; `trade` runs them thr
 | StockGuard | Gate | Analogous wallet setting |
 |---|---|---|
 | `BLOCK` (halt, dividend/split pause, no token price, unverifiable token terms) | `REFUSE`, no command | `AutoReject` |
-| `WARN` with risk ≥ 40 (earnings, unclear multiplier, big premium …) | `CONFIRM`: show the reasons, wait for an explicit yes | `NeedConfirmation` |
+| `WARN` with risk ≥ 40 (earnings, unclear multiplier, big premium …) | `CONFIRM`: show the reasons, wait for an explicit yes. `trade --yes` is honoured only for a `PROCEED` order with risk 0 and an audit | `NeedConfirmation` |
 | `WARN` with risk < 40 (market closed, stale reference) | `PROCEED`, with the reasons as heads-up notes to show the user, so users don't learn to click through | — |
 | `ALLOW` | `PROCEED` (the skill's normal per-trade confirmation still applies) | — |
-| token audit unavailable / riskLevel 4 / riskLevel 5 or tax > 10% | `CONFIRM` (acknowledge) / `CONFIRM` / `REFUSE` | — |
+| BUY token audit unavailable or skipped (`--no-audit`) / riskLevel 4 / riskLevel 5 or tax > 10% | `CONFIRM` (acknowledge; the stock warnings are put in the same confirmation) / `CONFIRM` / `REFUSE`. SELL into USDT: no audit (trusted target) | — |
+| limit trigger already met at the current token price | `CONFIRM` ("would fire immediately") | — |
 | order > wallet `quotaLeft` | `CONFIRM` with the order cut (rounded down) to `quotaLeft`; under $1 left → `REFUSE` | daily limit |
 | the wallet's quote is > 1% / > 5% worse than the token price (`trade`) | `CONFIRM` / stop before the swap | — |
 
@@ -56,7 +59,7 @@ Each rule follows the official skill text (`binance-skills-hub` commit `9960c675
 | Skill text | What the gate does |
 |---|---|
 | "The same ticker often exists under more than one provider … **do not default to Ondo. Ask the user which provider they mean**" (SKILL.md) | bare ticker with several issuers → `ASK` + the choices with their multipliers |
-| "Before `market-order swap`, `limit-order buy`, or `limit-order sell`, complete the pre-check in security.md" → token audit; "Security audit data is not available for this token on this chain." / "Token security audit is temporarily unavailable." → "Require explicit user acknowledgment" (references/security.md) | calls the public audit API for every order. Unavailable or unreachable → `CONFIRM` with those exact words; `riskLevel` 5 or tax > 10% → `REFUSE` (query-token-audit) |
+| "Before `market-order swap`, `limit-order buy`, or `limit-order sell`, complete the pre-check in security.md" → token audit; "Security audit data is not available for this token on this chain." / "Token security audit is temporarily unavailable." → "Require explicit user acknowledgment" (references/security.md) | calls the public audit API for every BUY (the target is the stock token; a SELL's target is a trusted stablecoin, so step 1 skips it). Unavailable or unreachable → `CONFIRM` with those exact words; `riskLevel` 5 or tax > 10% → `REFUSE` (query-token-audit) |
 | "**Fail-closed**: If the security check API is unreachable, inform the user and require acknowledgment" (SKILL.md) | applied to the audit as above. StockGuard applies the same principle to its own market data: if the list or price call fails → `REFUSE` |
 | "**No address hallucination**: Never fabricate a contract address" (SKILL.md) | contract not in the RWA token list → `REFUSE`; the `toToken` address only ever comes from the list |
 | "Confirm with the user each time before any state-changing command" (SKILL.md) | `CONFIRM` can't be skipped |
@@ -65,7 +68,8 @@ Each rule follows the official skill text (`binance-skills-hub` commit `9960c675
 | "For trades without explicit slippage, disclose the default ("auto")" (SKILL.md) | `--slippage` is passed through, or the disclosure note is added |
 | "an orderId is NOT a completed swap — poll to a terminal state" (references/market-order.md) | the third command is the `market-order list --orderId` poll until `FINISHED` / `FAILED` |
 | `wallet settings` → `quotaLeft`, `tradeAllTokens`, `quotaDate` (references/wallet-setting.md) | `--wallet-settings` takes that JSON as is (`trade` reads it live); flags settings from another day |
-| `wallet status` → `CONNECTED` (references/wallet-view.md) | `trade` stops at preflight unless the wallet is connected; SELL checks `wallet balance` first |
+| `wallet status` → `CONNECTED`, `cli-check --required-version 1.10.0` (references/wallet-view.md, preflight.md) | `trade` stops at preflight unless the wallet is connected and the CLI is new enough; BUY checks the pay-token balance and SELL the token balance first; an order still PENDING after polling is reported as "still processing", never as done |
+| `baw` 1.10.0 itself (installed locally, not signed in) | flags checked against the real `--help` (`fixtures/baw/cli-1.10.0-help.txt`); real `UNCONNECTED` / `NOT_LOGGED_IN` responses are test fixtures |
 
 ## What it checks (domain rules, `src/stockguard/domain/guard.py`)
 
@@ -76,7 +80,7 @@ Each rule follows the official skill text (`binance-skills-hub` commit `9960c675
 - **The API contradicts itself on the multiplier** (the token list and the price feed disagree by more than 1%) → `WARN`, with no premium from either value and the share count taken from the price ratio. Together with an API-vs-chain supply mismatch → `BLOCK` ("token terms can't be verified")
 - **No market session reported** by the issuer (all xStocks/bStocks on weekends), or the market-wide session is pause / pre / post / overnight → `BLOCK` for a halt, `WARN` otherwise
 - **No multiplier** in the payload → `WARN` (1 is only an assumption)
-- **Premium/discount** against the independent stock price → `WARN` above 1%
+- **Premium/discount** against the independent stock price → `WARN` above 1%; more than 25% either way → `BLOCK` as a data error (live MRVLx −88%, GMEx +845%)
 - **No independent stock price** (it is just token price ÷ multiplier) → `WARN` ("any premium is invisible")
 - **Large order**: more than 1% of all tokens on BNB Chain (`totalSupply()` over public BSC RPC) → note. Supply is not liquidity.
 - **Risk score 0–100**, so warnings can be ranked: halt/pause/no price/unverifiable terms 100 · earnings 40 · multiplier conflict 30 · missing multiplier 30 · multiplier up to 30 · premium up to 40 (1 point per 0.1% beyond the threshold) · market closed 15 · no independent price 15 · outside regular hours 10 · no session reported 10.
@@ -86,9 +90,9 @@ Each rule follows the official skill text (`binance-skills-hub` commit `9960c675
 Scans of every BSC stock token: 2026-10-03 (Ondo, 458 tokens, 7.4 s) and 2026-10-04 (all three issuers, 675 tokens, 13.8 s, 0 request errors).
 
 - 432 of 458 Ondo tokens reported a weekend "stock price" equal to the token price ÷ multiplier, so premium checks read 0%.
-- xStocks and bStocks reported `marketStatus: null` and `reasonCode: TRADING` for all 217 tokens on a Sunday, while Ondo said `closed`.
+- xStocks and bStocks reported `marketStatus: null` and `reasonCode: TRADING` for all 217 tokens on a Sunday. At the same moment Ondo reported 426 `closed`, 31 `offhours` and 1 `regular` (USDY).
 - For 39 of 130 xStocks, the token list and the price feed give different multipliers: NFLXx 1 vs 10, CRWDx 1 vs 4, TQQQx 1 vs 2.01, AZNx 1 vs 0.51. The supply is off by the same factor: NFLXx totalSupply on chain 100,000 vs API 10,000. 77 of 130 xStocks had no token price.
-- The token security audit that the Agentic Wallet skill requires before every swap returned `hasResult: false, isSupported: false` for all 45 stock tokens we sampled (15 per issuer). USDT came back `riskLevel 3`.
+- The token security audit that the Agentic Wallet skill requires before every swap returned `hasResult: false, isSupported: false` for all 45 stock tokens we sampled (15 per issuer, raw `data/audit-sample-20261004.jsonl`, `scripts/audit_sample.py`). USDT came back `riskLevel 3`.
 - 38 tickers exist under all three issuers, with different terms. NFLX is 10 shares per token on Ondo and 1 on bStocks. CRWD is 4 and 1.
 - Multiplier exposure (simple arithmetic on the real multipliers, not an observed agent): sizing "$1,000" by the per-share price instead of the per-token price buys **$10,026 of KLAC** or **$66.67 of ENLV** (`stockguard replay data/scan-20261003-weekend.jsonl`). On the `baw` market-order path a BUY is sized in USDT, so this bites in limit-order triggers and SELL quantities. The gate converts both.
 
@@ -105,7 +109,7 @@ The raw notebook with reproduction commands is `docs/dx-findings.md`. The skelet
 
 ## Not in this build yet
 
-A recorded live mainnet trade. `stockguard trade` is built and tested against a fake `baw` (`tests/test_trade.py`). Running it for real needs a signed-in Agentic Wallet with a few dollars in it.
+A recorded live mainnet trade, and a Transaction API dry-run (that API needs a developer-portal key). `stockguard trade` is built and tested against a fake `baw` (`tests/test_trade.py`: market path, limit placed, limit rejected, balance checks, poll timeout) and against real unsigned `baw` output (`tests/test_baw_real_shapes.py`). Running it for real needs a signed-in Agentic Wallet with a few dollars in it. The quote and order response fields (`fromCoinAmount`, `orderId`, `status`, `txHash`) come from the skill's reference docs until that run.
 
 ## Architecture
 
@@ -114,7 +118,7 @@ A recorded live mainnet trade. `stockguard trade` is built and tested against a 
 ## Tests
 
 ```
-python3 -m pytest -q      # 94 tests, offline (fixtures are real recorded responses; `baw` is faked)
+python3 -m pytest -q      # 114 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

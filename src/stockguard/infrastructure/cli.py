@@ -11,7 +11,10 @@ from stockguard.adapters.mapping import to_snapshot
 from stockguard.application.service import AmbiguousTicker, Guard, TickerNotFound
 
 
-def build_auditor(offline: bool = False):
+def build_auditor(offline: bool = False, skip: bool = False):
+    if skip:
+        from stockguard.adapters.token_audit import SkippedAudit
+        return SkippedAudit()
     if offline:
         from stockguard.adapters.recorded import RecordedAudit
         return RecordedAudit()
@@ -42,18 +45,21 @@ def _parser() -> argparse.ArgumentParser:
     cm = sub.add_parser("compare", parents=[common], help="Same stock from every issuer (Ondo, xStocks, bStocks)")
     cm.add_argument("ticker"); cm.add_argument("--usd", type=float, default=1000.0)
     order = argparse.ArgumentParser(add_help=False)
-    order.add_argument("ticker"); order.add_argument("--usd", type=float, required=True)
+    order.add_argument("ticker"); order.add_argument("--usd", type=float, default=None)
+    order.add_argument("--tokens", type=float, default=None, help="SELL size in tokens (instead of --usd)")
     order.add_argument("--side", default="BUY"); order.add_argument("--pay-with", default="USDT")
     order.add_argument("--slippage", type=float, default=None, help="percent; omitted = the wallet's \"auto\"")
     order.add_argument("--trigger-share-price", type=float, default=None,
                        help="limit order at this price per SHARE (converted to the per-token trigger)")
-    order.add_argument("--no-audit", action="store_true", help="skip the token security audit call")
+    order.add_argument("--no-audit", action="store_true",
+                       help="skip the token security audit (disclosed; the user must then acknowledge)")
     g = sub.add_parser("gate", parents=[common, order], help="Gate an Agentic Wallet order: PROCEED | CONFIRM | ASK | REFUSE")
     g.add_argument("--wallet-settings", default=None, help="file with the output of `baw wallet settings --json`")
     g.add_argument("--pay-price", type=float, default=None, help="USD price of BNB when --pay-with BNB")
     tr = sub.add_parser("trade", parents=[common, order],
                         help="Guarded trade through Agentic Wallet (needs `baw`, signed in): gate -> quote check -> yes -> swap -> poll")
-    tr.add_argument("--yes", action="store_true", help="skip the typed confirmation (only for PROCEED orders)")
+    tr.add_argument("--yes", action="store_true",
+                    help="skip the typed confirmation — only honoured for PROCEED orders with risk 0 and an audit")
     s = sub.add_parser("scan", parents=[common], help="Scan every BSC tokenized stock -> JSONL")
     s.add_argument("--out", default="data/snapshot.jsonl"); s.add_argument("--workers", type=int, default=8)
     s.add_argument("--limit", type=int, default=None)
@@ -114,9 +120,9 @@ def _run(a, guard: Guard):
                 sys.exit(f"Can't read --wallet-settings {a.wallet_settings}: {e}. Save the output of "
                          f"`baw wallet settings --json` to that file.")
         out = gate_swap(guard, a.ticker, a.usd, side=a.side, pay_with=a.pay_with, settings=settings,
-                        auditor=None if a.no_audit else build_auditor(a.offline), slippage=a.slippage,
+                        auditor=build_auditor(a.offline, a.no_audit), slippage=a.slippage,
                         trigger_share_price=a.trigger_share_price, pay_price=a.pay_price,
-                        today=time.strftime("%Y-%m-%d", time.gmtime()))
+                        today=time.strftime("%Y-%m-%d", time.gmtime()), token_qty=a.tokens)
         out["baw_commands"] = commands(out)
         print(json.dumps(out, indent=2))
     elif a.cmd == "trade":
@@ -126,12 +132,13 @@ def _run(a, guard: Guard):
         def confirm(summary):
             g = summary["gate"]
             print(json.dumps(summary, indent=2))
-            if a.yes and g["action"] == "PROCEED":
-                return True
+            audited = (g.get("audit") or {}).get("available") or (g["side"] == "SELL" and g.get("audit") is None)
+            if a.yes and g["action"] == "PROCEED" and g["risk"] == 0 and audited:
+                return True   # --yes only for a clean, audited order; everything else needs a typed yes
             return input(f"Place {g['side']} ${g['approved_usd']:,.2f} of {g['symbol']} through Agentic Wallet? "
                          f"Type yes: ").strip().lower() == "yes"
         r = run_guarded_trade(guard, AgenticWallet(BawRunner()), a.ticker, a.usd, side=a.side, pay_with=a.pay_with,
-                              slippage=a.slippage, auditor=None if a.no_audit else build_auditor(a.offline),
+                              slippage=a.slippage, auditor=build_auditor(a.offline, a.no_audit), token_qty=a.tokens,
                               trigger_share_price=a.trigger_share_price, confirm=confirm,
                               today=time.strftime("%Y-%m-%d", time.gmtime()))
         print(json.dumps(r, indent=2))
@@ -146,7 +153,7 @@ def _run(a, guard: Guard):
                           "seconds": round(time.time() - t0, 1), "out": a.out}))
     elif a.cmd == "serve":
         from stockguard.adapters.web import serve
-        serve(guard, a.port)
+        serve(guard, a.port, auditor=build_auditor(a.offline))
     elif a.cmd == "kline":
         t = guard.resolve(a.ticker)
         rows = guard.client.kline(t["contractAddress"], a.interval, a.limit)

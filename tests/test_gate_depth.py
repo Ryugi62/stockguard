@@ -102,3 +102,56 @@ def test_gate_with_audit_port_calls_it_with_the_contract():
             seen.append(address); return AuditResult(available=False)
     out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, auditor=Audit())
     assert seen == [NFLX_ON] and out["audit"]["available"] is False
+
+
+class _Audit:
+    def __init__(self, res):
+        self.res, self.calls = res, []
+    def audit(self, address):
+        self.calls.append(address); return self.res
+
+
+def test_sell_into_usdt_skips_the_audit_because_the_target_is_trusted():
+    a = _Audit(AuditResult(available=False))
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, side="SELL", auditor=a)
+    assert a.calls == [] and out["action"] == PROCEED and any("trusted" in n for n in out["notes"])
+
+
+def test_skipped_audit_is_disclosed_and_needs_acknowledgment():
+    from stockguard.adapters.token_audit import SkippedAudit
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, auditor=SkippedAudit())
+    assert out["action"] == CONFIRM and any("skipped" in r.lower() for r in out["reasons"])
+
+
+def test_available_audit_carries_the_skills_disclaimer():
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, auditor=_Audit(AuditResult(True, risk_level=1)))
+    assert any('LOW risk does NOT mean "safe."' in n for n in out["notes"])
+
+
+def test_sell_can_be_sized_in_tokens():
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", None, side="SELL", token_qty=0.25)
+    assert abs(out["approved_token_qty"] - 0.25) < 1e-12 and "--fromTokenQty 0.250000" in commands(out)[1]
+
+
+def test_limit_follow_up_uses_strategy_id():
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, trigger_share_price=60.0)
+    assert "baw limit-order list --strategyId <strategyId" in commands(out)[1]
+
+
+def test_limit_trigger_already_met_is_flagged():
+    # NFLXon trades at 670.62 per token. BUY trigger $75/share = $750/token is above it -> fires immediately
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, trigger_share_price=75.0)
+    assert out["action"] == CONFIRM and any("already met" in r for r in out["reasons"])
+
+
+def test_limit_sell_by_dollars_is_sized_at_the_trigger_price():
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 150.0, side="SELL", trigger_share_price=75.0)
+    assert abs(out["approved_token_qty"] - 150.0 / 750.0) < 1e-9
+
+
+def test_audit_confirm_puts_the_stock_warnings_in_the_reasons():
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, auditor=_Audit(AuditResult(available=False)))
+    assert any("closed" in r for r in out["reasons"]) and AUDIT_UNAVAILABLE_TEXT in out["reasons"]
+
+
+AUDIT_UNAVAILABLE_TEXT = "Security audit data is not available for this token on this chain."

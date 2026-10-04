@@ -113,3 +113,11 @@ def test_describe_gives_one_consistent_label():
     g = Guard(ThreeIssuers(), to_snapshot)
     c = {x["symbol"]: x for x in g.describe(g.tokens_candidates("NFLX"))}
     assert c["NFLXx"]["shares_label"].startswith("1 or 10") and c["NFLXon"]["shares_label"] == "10 shares"
+
+
+def test_compare_shows_per_share_price_and_spread():
+    rows = Guard(ThreeIssuers(), to_snapshot).compare("NFLX", usd_amount=1000)
+    per = {r["symbol"]: r["per_share_price"] for r in rows}
+    assert abs(per["NFLXon"] - 67.062353) < 1e-6 and abs(per["NFLXx"] - 71.3027) < 1e-3 and abs(per["NFLXB"] - 67.71) < 1e-9
+    spread = {r["symbol"]: r["per_share_spread"] for r in rows}
+    assert spread["NFLXon"] == 0 and abs(spread["NFLXx"] - (71.30272 / 67.062353 - 1)) < 1e-4

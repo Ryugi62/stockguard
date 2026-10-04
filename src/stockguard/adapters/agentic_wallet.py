@@ -32,9 +32,11 @@ def parse_wallet_settings(raw: Optional[Dict]) -> Optional[WalletSettings]:
         except (TypeError, ValueError):
             return None
     tat = d.get("tradeAllTokens")
+    _session = d.get("sessionExpireTime")
     return WalletSettings(quota_left=num("quotaLeft"), daily_limit=num("dailyLimit"),
                           abnormal_handling=d.get("abnormalTxnHandling"),
-                          trade_all_tokens=tat if isinstance(tat, bool) else None, quota_date=d.get("quotaDate"))
+                          trade_all_tokens=tat if isinstance(tat, bool) else None, quota_date=d.get("quotaDate"),
+                          session_expires=_session)
 
 
 def parse_quote(raw: Dict):
@@ -69,7 +71,8 @@ def commands(gate: Dict) -> List[str]:
     if gate.get("trigger_token_price"):
         side = "buy" if gate["side"] == "BUY" else "sell"
         return [f"baw limit-order {side} --triggerPrice {gate['trigger_token_price']:.2f} {a}{_slip(gate)} --json",
-                "baw limit-order list --json   # check the order; if it was rejected, stop and ask — never a market order"]
+                "baw limit-order list --strategyId <strategyId from the order> --json   # placed is not filled; if it was "
+                "rejected, stop and ask — never a market order"]
     return [f"baw market-order quote {a}{_slip(gate)} --json",
             f"baw market-order swap {a}{_slip(gate)} --json",
             "baw market-order list --orderId <orderId from the swap> --json   # repeat until status is FINISHED or FAILED"]
@@ -119,6 +122,18 @@ class AgenticWallet:
     def balance(self, contract):
         rows = self._data(self.baw(f"baw wallet balance --tokenAddress {contract} --binanceChainId 56 --json")) or []
         return float(rows[0]["balance"]) if rows else 0.0
+
+    def pay_balance(self, symbol):
+        """None when the wallet doesn't answer (the swap will then fail on its own)."""
+        r = self.baw(f"baw wallet balance --symbol {symbol} --binanceChainId 56 --json")
+        rows = self._data(r)
+        if not isinstance(rows, list):
+            return None
+        return float(rows[0]["balance"]) if rows else 0.0
+
+    def cli_ok(self, required="1.10.0"):
+        d = self._data(self.baw(f"baw cli-check --required-version {required} --json")) or {}
+        return None if not d else not d.get("needUpdateCli", False)
 
     def commands(self, gate):
         return commands(gate)

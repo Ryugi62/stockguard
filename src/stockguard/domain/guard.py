@@ -8,6 +8,7 @@ DOCUMENTED_SESSIONS = {"premarket", "regular", "postmarket", "overnight", "close
 OUTSIDE_REGULAR = {"premarket", "postmarket", "overnight", "offhours"}
 _RANK = {ALLOW: 0, WARN: 1, BLOCK: 2}
 MULTIPLIER_CONFLICT = 0.01   # list vs price-feed multiplier differing by more than 1% is a conflict
+DATA_ERROR_GAP = 0.25        # a token more than 25% away from its reference price is treated as bad data
 
 PAUSE_REASONS = {
     "cash_dividend": "Paused for a cash dividend",
@@ -99,7 +100,7 @@ class Verdict:
 LARGE_FLOAT_SHARE = 0.01   # an order bigger than 1% of all tokens in existence is unusually large for this token
 
 # Risk weights (documented; additive, capped at 100). They rank warnings, they are not probabilities.
-RISK_WEIGHTS = {"halt_or_pause_or_no_token_price": 100, "multiplier_conflict": 30, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
+RISK_WEIGHTS = {"halt_or_pause_or_no_token_price_or_price_off_25pct": 100, "multiplier_conflict": 30, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
                 "multiplier": "up to 30, grows with |log10(multiplier)|", "multiplier_missing": 30,
                 "premium": "1 point per 0.1% beyond threshold, max 40", "no_session_reported": 10,
                 "no_independent_price": 15}
@@ -125,8 +126,11 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
     if s.status == "ASSET_LIMITED":
         what = "Earnings release" if reason_key == "earnings" else f"Limited ({s.reason or 'unknown reason'})"
         v.raise_to(WARN, f"{what} — trading restricted"); v.add_risk(40)
-    if s.status == "MARKET_CLOSED" or s.session == "closed":
+    if s.status == "MARKET_CLOSED" or s.session == "closed" or (not s.session and s.market_session == "closed"):
         v.raise_to(WARN, "US market is closed — the reference price is stale"); v.add_risk(15)
+        if not s.session:
+            v.raise_to(WARN, "The issuer reports no market session for this token — treat the price as unverified")
+            v.add_risk(10)
     elif s.session in OUTSIDE_REGULAR or s.market_session == "closed" or s.market_session in OUTSIDE_REGULAR:
         v.raise_to(WARN, "Outside regular US hours — the stock quote is from extended/overnight trading or the last close, "
                          "and liquidity is thin"); v.add_risk(10)
@@ -152,10 +156,13 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
             v.add_risk(min(30, int(10 * abs(math.log10(s.multiplier)) * 3)))
 
     p = s.premium
-    if p is not None and side == "BUY" and p > premium_threshold:
+    if p is not None and abs(p) > DATA_ERROR_GAP:
+        v.raise_to(BLOCK, f"Token price is {p * 100:+.0f}% off the reference price — that is a data error or a broken "
+                          f"market, not a bargain"); v.add_risk(100)
+    elif p is not None and side == "BUY" and p > premium_threshold:
         v.raise_to(WARN, f"You would pay {p * 100:.1f}% above the reference price")
         v.add_risk(min(40, int(round((p - premium_threshold) * 1000))))
-    if p is not None and side == "SELL" and -p > premium_threshold:
+    elif p is not None and side == "SELL" and -p > premium_threshold:
         v.raise_to(WARN, f"You would sell {-p * 100:.1f}% below the reference price")
         v.add_risk(min(40, int(round((-p - premium_threshold) * 1000))))
     if s.reference_derived:

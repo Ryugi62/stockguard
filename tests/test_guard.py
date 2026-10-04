@@ -152,3 +152,13 @@ def test_missing_multiplier_warns():
 def test_premium_risk_counts_only_beyond_threshold():
     v = check_trade(snap(token_price=101.5), "BUY", 1)      # 1.5% premium, 1% threshold -> 5 points
     assert v.risk == 5
+
+
+def test_price_far_off_reference_in_either_direction_is_a_data_error_block():
+    assert check_trade(snap(token_price=12.0), "BUY", 1).level == BLOCK     # -88% (MRVLx-like)
+    assert check_trade(snap(token_price=945.0), "BUY", 1).level == BLOCK    # +845% (GMEx-like)
+
+
+def test_empty_session_while_market_closed_says_closed_and_no_session():
+    v = check_trade(snap(session="", status="TRADING", market_session="closed"), "BUY", 1)
+    assert any("closed" in r for r in v.reasons) and any("no market session" in r for r in v.reasons) and v.risk == 25

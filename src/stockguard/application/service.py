@@ -110,7 +110,15 @@ class Guard:
         if not hits:
             self.resolve(ticker)   # raises TickerNotFound with suggestions
             hits = [self.resolve(ticker)]
-        return [self.check(t["contractAddress"], side, token_qty, usd_amount=usd_amount) for t in hits]
+        rows = [self.check(t["contractAddress"], side, token_qty, usd_amount=usd_amount) for t in hits]
+        for r in rows:   # same share, three prices: the per-share view also shows which multiplier the price supports
+            m = r["share_equivalent"] / r["token_qty"] if r.get("token_qty") else r["multiplier"]
+            r["per_share_price"] = (r["token_price"] / m) if r.get("token_price") and m else None
+        priced = [r["per_share_price"] for r in rows if r["per_share_price"]]
+        lo = min(priced) if priced else None
+        for r in rows:
+            r["per_share_spread"] = (r["per_share_price"] / lo - 1) if lo and r["per_share_price"] else None
+        return rows
 
     def snapshot(self, query: str) -> Snapshot:
         return self._snapshot(self.resolve(query))[0]

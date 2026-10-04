@@ -48,7 +48,8 @@ def test_full_path_polls_to_finished_and_returns_tx():
     r = trade(fake)
     assert r["stage"] == "done" and r["status"] == "FINISHED" and r["tx_hash"] == "0xabc"
     order = [c.split(" --")[0] for c in fake.calls]
-    assert order[:4] == ["wallet status", "wallet settings", "market-order quote", "market-order swap"]
+    assert order[:3] == ["wallet status", "cli-check", "wallet settings"]
+    assert order.index("market-order quote") < order.index("market-order swap")
     assert order[-1].startswith("market-order list")
 
 
@@ -79,3 +80,71 @@ def test_wallet_quota_from_settings_cuts_the_order():
     fake = FakeBaw(quota=3)
     r = trade(fake, usd=5.0)
     assert r["gate"]["approved_usd"] == 3.0 and any("--fromTokenQty 3.00" in c for c in fake.calls)
+
+
+class FakeBawLimit(FakeBaw):
+    def __init__(self, accept=True, usdt=100.0, token=10.0, **kw):
+        super().__init__(**kw); self.accept, self.usdt, self.token = accept, usdt, token
+
+    def __call__(self, argv):
+        import json
+        cmd = " ".join(argv[:2])
+        if cmd in ("limit-order buy", "limit-order sell"):
+            self.calls.append(" ".join(argv))
+            if self.accept:
+                return json.dumps({"success": True, "data": {"strategyId": "77"}})
+            return json.dumps({"success": False, "error": {"message": "Ondo-related tokens cannot be traded"}})
+        if cmd == "wallet balance":
+            self.calls.append(" ".join(argv))
+            if "--symbol" in argv:
+                return json.dumps({"success": True, "data": [{"symbol": "USDT", "balance": str(self.usdt), "price": "1.0"}]})
+            return json.dumps({"success": True, "data": [{"symbol": "NFLXon", "balance": str(self.token), "price": "670"}]})
+        if cmd == "cli-check":
+            self.calls.append(" ".join(argv))
+            return json.dumps({"success": True, "data": {"currentCliVersion": "1.10.0", "needUpdateCli": False}})
+        return super().__call__(argv)
+
+
+def test_rejected_limit_order_stops_without_market_fallback():
+    fake = FakeBawLimit(accept=False)
+    r = trade(fake, trigger_share_price=60.0)
+    assert r["stage"] == "limit" and not any("market-order swap" in c for c in fake.calls)
+
+
+def test_placed_limit_order_is_reported_as_placed_not_filled():
+    r = trade(FakeBawLimit(), trigger_share_price=60.0)
+    assert r["status"] == "LIMIT_PLACED" and r["strategy_id"] == "77" and "not filled" in r["result"]
+
+
+def test_sell_more_than_held_stops():
+    r = trade(FakeBawLimit(token=0.001), side="SELL")
+    assert r["stage"] == "balance"
+
+
+def test_buy_without_enough_usdt_stops():
+    r = trade(FakeBawLimit(usdt=1.0), usd=5.0)
+    assert r["stage"] == "balance" and "USDT" in r["result"]
+
+
+def test_poll_timeout_is_reported_as_still_processing():
+    fake = FakeBaw(final="PENDING")
+    r = run_guarded_trade(Guard(FakeClient(), to_snapshot), AgenticWallet(BawRunner(run=fake)), "NFLXon", 5.0,
+                          confirm=lambda s: True, sleep=lambda s: None, max_polls=3)
+    assert r["stage"] == "pending" and r["status"] == "PENDING" and "still processing" in r["result"]
+
+
+def test_sell_into_bnb_quote_is_compared_in_dollars():
+    import json
+    class SellBnb(FakeBawLimit):
+        def __call__(self, argv):
+            cmd = " ".join(argv[:2])
+            if cmd == "wallet balance" and "--symbol" in argv:
+                self.calls.append(" ".join(argv))
+                return json.dumps({"success": True, "data": [{"symbol": "BNB", "balance": "1", "price": "600"}]})
+            if cmd == "market-order quote":
+                qty = float(argv[argv.index("--fromTokenQty") + 1])
+                return json.dumps({"success": True, "data": {"fromCoinAmount": str(qty),
+                                                             "toCoinAmount": str(qty * PRICE / 600 * 0.998)}})
+            return super().__call__(argv)
+    r = trade(SellBnb(), side="SELL", pay_with="BNB")
+    assert r["stage"] == "done", r.get("result")

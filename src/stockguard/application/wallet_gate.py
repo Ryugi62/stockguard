@@ -22,13 +22,17 @@ def _refuse(query: str, side: str, usd: float, reason: str) -> Dict:
 def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pay_with: str = "USDT",
               settings: Optional[WalletSettings] = None, auditor: Optional[AuditPort] = None,
               slippage: Optional[float] = None, trigger_share_price: Optional[float] = None,
-              pay_price: Optional[float] = None, today: Optional[str] = None) -> Dict:
+              pay_price: Optional[float] = None, today: Optional[str] = None,
+              token_qty: Optional[float] = None) -> Dict:
+    """Size by dollars (`usd_amount`) or, for a SELL, by tokens (`token_qty`)."""
     side, pay_with = side.upper(), pay_with.upper()
     if side not in ("BUY", "SELL"):
         raise ValueError("side must be BUY or SELL")
     if pay_with not in PAY_TOKENS:
         raise ValueError(f"pay_with must be one of {', '.join(PAY_TOKENS)}")
-    if not usd_amount or usd_amount <= 0:
+    if token_qty is not None and (side != "SELL" or token_qty <= 0):
+        raise ValueError("token_qty sizing is for SELL orders and must be positive")
+    if token_qty is None and (not usd_amount or usd_amount <= 0):
         raise ValueError("usd_amount must be positive")
     if slippage is not None and not (0 < slippage <= 100):
         raise ValueError("slippage is a percentage between 0 and 100")
@@ -54,14 +58,25 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
         return _refuse(query, side, usd_amount, f"Market data unavailable ({type(e).__name__}) — fail-closed: StockGuard refuses "
                                                 f"to gate without fresh data. Tell the user.")
     try:
-        r = guard.check(t["contractAddress"], side, usd_amount=usd_amount)
+        if token_qty is not None:
+            r = guard.check(t["contractAddress"], side, token_qty)
+            usd_amount = r["token_qty"] * (r["token_price"] or 0.0)
+            if usd_amount <= 0:
+                return _refuse(query, side, 0.0, "No token price — the sale can't be valued")
+        else:
+            r = guard.check(t["contractAddress"], side, usd_amount=usd_amount)
     except Exception as e:
         return _refuse(query, side, usd_amount, f"Market data unavailable ({type(e).__name__}) — fail-closed: StockGuard refuses "
                                                 f"to gate without fresh data. Tell the user.")
-    audit = auditor.audit(t["contractAddress"]) if auditor is not None else None
+    # security.md §1: the audit target is --toToken. A SELL's target is a trusted stablecoin/BNB -> skip (step 1).
+    audit = auditor.audit(t["contractAddress"]) if auditor is not None and side == "BUY" else None
     v = Verdict(r["verdict"], list(r["reasons"]), risk=r["risk"], notes=list(r["notes"]))
     d = decide(v, usd_amount, settings, audit=audit)
     notes = list(d.notes)
+    if side == "SELL":
+        notes.append(f"Token audit not needed: the target is {pay_with}, a trusted token (security.md §1, step 1).")
+    elif auditor is None:
+        notes.append("No token audit was run by this caller.")
     if settings is None:
         notes.append("Wallet limits were not checked — pass the output of `baw wallet settings --json`.")
     elif today and settings.quota_date and settings.quota_date != today:
@@ -75,6 +90,11 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
     if trigger_share_price is not None and action not in (REFUSE,):
         try:
             trigger = per_token_trigger(trigger_share_price, r["multiplier"], r.get("multiplier_conflict", False))
+            px = r["token_price"] or 0.0
+            if px and ((side == "BUY" and trigger >= px) or (side == "SELL" and trigger <= px)):
+                action = CONFIRM if action != REFUSE else action
+                reasons = reasons + [f"Limit trigger ${trigger:,.2f} per token is already met (the token trades at "
+                                     f"${px:,.2f}) — the order would fire immediately, like a market order"]
             notes.append(f"Limit order: ${trigger_share_price:,.2f} per {r['ticker']} share = ${trigger:,.2f} per "
                          f"{r['symbol']} token (1 token = {r['multiplier']:.4g} shares). If the wallet rejects the limit "
                          f"order, stop and ask the user — do not fall back to a market order (skill, step 7).")
@@ -85,10 +105,12 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
     if pay_with == "BNB":
         notes.append(f"Paying with BNB at ${pay_price:,.2f} per BNB (BNB is not a dollar token; the quote has the "
                      f"final amount)." if pay_price else "Selling into BNB.")
+    qty_at = trigger if (trigger and side == "SELL" and token_qty is None) else price   # a limit SELL fills at the trigger
     return {"action": action, "query": query, "side": side, "pay_with": pay_with,
             "symbol": r["symbol"], "ticker": r["ticker"], "issuer": r.get("issuer"), "contract": r["contract"],
             "requested_usd": d.requested_usd, "approved_usd": approved,
-            "approved_token_qty": (approved / price) if price else 0.0,
+            "approved_token_qty": (token_qty if token_qty is not None and approved == d.requested_usd
+                                   else (approved / qty_at) if qty_at else 0.0),
             "pay_qty": (approved / pay_price) if pay_with == "BNB" and pay_price else approved,
             "token_price": price, "multiplier": r["multiplier"], "shares_label": r.get("shares_label"),
             "verdict": r["verdict"], "risk": r["risk"], "reasons": reasons, "notes": notes,
