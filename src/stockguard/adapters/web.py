@@ -39,6 +39,10 @@ def make_handler(guard):
                     r = guard.check(key[0], key[1], float(key[2]) if key[2] else None,
                                     usd_amount=float(key[3]) if key[3] else None)
                 except AmbiguousTicker as e:
+                    try:
+                        e.candidates = guard.describe(e.candidates)
+                    except Exception:
+                        pass
                     return self._json(409, {"error": e.message(), "choices": e.candidates})
                 except TickerNotFound as e:
                     hint = f" Did you mean {', '.join(e.suggestions)}?" if e.suggestions else ""

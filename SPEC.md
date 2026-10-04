@@ -31,7 +31,7 @@ StockGuard is a small safety layer that answers one question before any tokenize
 - Given multiplier 10 and quantity 1 token, then `share_equivalent` = 10.
 - Given status `TRADING` in a regular session and premium within threshold, then verdict = ALLOW.
 - Given per-asset session `offhours` (or pre/post/overnight) while the market-wide session is `closed`, then verdict = WARN ("Outside regular US hours").
-- Given an on-chain totalSupply of 220.99 tokens and a BUY of 15 tokens, then verdict = WARN ("Thin market — 6.8% of all tokens").
+- Given an on-chain totalSupply of 220.99 tokens and a BUY of 15 tokens, then a note "Large order for this token — 6.8% of all tokens" is added and the level is not raised (supply is not liquidity).
 - Given a USD order size, then token quantity = USD ÷ per-token price (never per-share price).
 
 - S6: Every verdict carries a 0–100 risk score so WARNs can be ranked (pause/halt = 100).
@@ -44,7 +44,10 @@ StockGuard is a small safety layer that answers one question before any tokenize
 ## UC-4 Agentic Wallet gate (Given / When / Then)
 Ubiquitous language: **Gate action** — `PROCEED | CONFIRM | ASK | REFUSE`. **Wallet settings** — `quotaLeft`, `dailyLimit`, `abnormalTxnHandling`, `tradeAllTokens` as returned by `baw wallet settings --json`. **Approved USD** — the order size the gate lets through.
 - Given verdict BLOCK, when a swap is gated, then action = REFUSE, approved USD = 0, and no wallet command is emitted.
-- Given verdict WARN, then action = CONFIRM and `confirmation_required` = true (it can't be skipped).
+- Given verdict WARN with risk ≥ 40, then action = CONFIRM and `confirmation_required` = true (it can't be skipped). Given WARN below 40, then PROCEED with the reasons as heads-up notes.
+- Given the token audit is unavailable (hasResult or isSupported false) or unreachable, then CONFIRM with the skill's exact sentence. Given riskLevel 5 or a tax above 10%, then REFUSE.
+- Given a limit order at $75 per share on a 10-share token, then `--triggerPrice 750.00`. Given a disputed multiplier, then REFUSE.
+- Given no slippage, then a note discloses "auto". Given an order under $1, then REFUSE. quotaLeft is rounded down to the cent.
 - Given verdict ALLOW and no wallet limits, then action = PROCEED.
 - Given quotaLeft 120 and an order of 500, then action = CONFIRM and approved USD = 120. Given quotaLeft 0, then REFUSE.
 - Given a bare ticker held by several issuers, then action = ASK with the candidates, and no command.
@@ -52,10 +55,17 @@ Ubiquitous language: **Gate action** — `PROCEED | CONFIRM | ASK | REFUSE`. **W
 - Given a contract address that is not in the RWA list, then REFUSE.
 - Given BUY $100 of NFLXon, then the commands are `baw market-order quote|swap --fromTokenQty 100.00 --fromToken <USDT BSC> --toToken <NFLXon contract> --binanceChainId 56 --json`, followed by the `market-order list --orderId` poll. SELL swaps the token into USDT, and the token quantity is rounded down.
 
+## UC-6 Guarded trade (`stockguard trade`, `application/trade.py` over a `WalletPort`)
+- Given `wallet status` is not CONNECTED, then stop before any other call.
+- Given the wallet's quote is more than 5% worse than the token price, then stop before the swap (1–5% → included in the confirmation).
+- Given no typed yes, then no swap. Given a swap, then poll `market-order list` until FINISHED or FAILED, and report that status and txHash.
+- Given SELL, then `wallet balance` must cover the quantity. Given a rejected limit order, then stop (no market fallback).
+
 ## UC-5 Issuers
 - Given the list and the price feed disagree on the multiplier by more than 1% (NFLXx: 1 vs 10), then verdict ≥ WARN ("two different multipliers"), and reference price and premium are both null.
 - Given a token price of null or 0, then verdict = BLOCK ("No token price").
-- Given a per-asset `marketStatus` of null, then it is reported as a data inconsistency.
+- Given a per-asset `marketStatus` of null, then it is reported as a data inconsistency and the verdict is ≥ WARN. A market-wide `pause` → BLOCK even then.
+- Given a multiplier conflict and an API-vs-chain supply mismatch (> 0.1%), then BLOCK ("token terms can't be verified"). On a conflict alone, the share count follows the price ratio.
 
 ## Non-goals
 - No trading strategy, no PnL claims, no perps.

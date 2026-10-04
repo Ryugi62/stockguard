@@ -46,8 +46,9 @@ def test_demo_runs_offline_fast_and_tells_the_story(no_network):
         main(["demo"])
     out = buf.getvalue()
     assert time.time() - t0 < 5
-    for must in ("NFLXon", "NFLXx", "NFLXB", "1 token = 10 shares", "REFUSE", "CONFIRM",
-                 "baw market-order swap", "recorded", "SPLITDEMO"):
+    for must in ("NFLXon", "NFLXx", "NFLXB", "1 token = 10 shares", "1 or 10 shares?", "REFUSE", "CONFIRM",
+                 "baw market-order swap", "baw limit-order sell --triggerPrice 750.00", "recorded", "SPLITDEMO",
+                 "Security audit data is not available"):
         assert must in out, must
 
 

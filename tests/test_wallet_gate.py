@@ -27,7 +27,7 @@ def test_block_is_refused_like_autoreject():
 
 
 def test_warn_needs_explicit_confirmation_even_if_user_skipped_confirmations():
-    d = decide(v(WARN, ["US market is closed"], 15), 500.0)
+    d = decide(v(WARN, ["Earnings release"], 45), 500.0)
     assert d.action == CONFIRM and d.confirmation_required and d.approved_usd == 500.0
 
 
@@ -60,7 +60,7 @@ def test_parse_real_wallet_settings_shape():
 
 def test_gate_end_to_end_emits_exact_baw_commands_for_a_buy():
     out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0)
-    assert out["action"] == CONFIRM                       # weekend: market closed, derived price
+    assert out["action"] == PROCEED and any("Heads-up" in n for n in out["notes"])   # weekend, risk 30 < 40
     cmds = commands(out)
     assert cmds[0] == (f"baw market-order quote --fromTokenQty 100.00 --fromToken {USDT_BSC} --toToken {NFLX_ON} "
                        f"--binanceChainId 56 --json")
@@ -95,3 +95,35 @@ def test_sell_swaps_token_into_usdt_by_token_quantity():
     out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, side="SELL")
     swap = commands(out)[1]
     assert f"--fromToken {NFLX_ON} --toToken {USDT_BSC}" in swap and "--fromTokenQty 0.149114" in swap   # rounded down: never sell more than requested
+
+
+def test_low_risk_warn_proceeds_with_heads_up_notes_not_confirm_fatigue():
+    d = decide(v(WARN, ["US market is closed"], 15), 500.0)
+    assert d.action == PROCEED and any("US market is closed" in n for n in d.notes)
+
+
+def test_tiny_order_is_refused_and_quota_rounds_down():
+    assert decide(v(ALLOW), 0.001).action == REFUSE
+    assert decide(v(ALLOW), 500.0, WalletSettings(quota_left=120.009)).approved_usd == 120.0
+
+
+def test_token_list_down_also_fails_closed():
+    class ListDown(FakeClient):
+        def list_tokens(self, chain_id="56"):
+            raise RuntimeError("503")
+    out = gate_swap(Guard(ListDown(), to_snapshot), "NFLXon", 100.0)
+    assert out["action"] == REFUSE and any("fail-closed" in r for r in out["reasons"])
+
+
+def test_mcp_gate_survives_upstream_failure():
+    import io
+    from stockguard.adapters.mcp_stdio import run
+    class ListDown(FakeClient):
+        def list_tokens(self, chain_id="56"):
+            raise RuntimeError("503")
+    fin = io.StringIO(json.dumps({"jsonrpc": "2.0", "id": 9, "method": "tools/call", "params": {
+        "name": "guard_agentic_wallet_swap", "arguments": {"ticker": "NFLXon", "usd_amount": 10}}}) + "\n")
+    fout = io.StringIO()
+    run(Guard(ListDown(), to_snapshot), fin, fout)
+    res = json.loads(fout.getvalue())
+    assert json.loads(res["result"]["content"][0]["text"])["action"] == REFUSE

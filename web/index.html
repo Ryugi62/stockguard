@@ -82,7 +82,7 @@ $("f").addEventListener("submit", async (e) => {
       $("out").innerHTML = `<div class="card"><div class="verdict">${esc(t.toUpperCase())} is ${d.choices.length} different tokens</div>
         <p class="muted">Different issuers, different terms. Pick the one you mean:</p>
         <div class="choices">${d.choices.map((c) => `<button type="button" class="choice" data-s="${esc(c.symbol)}"><b>${esc(c.symbol)}</b>
-          <span>${esc(c.issuer)} · 1 token = ${Number(c.multiplier.toPrecision(4))} share${Math.abs(c.multiplier - 1) > 0.05 ? "s" : ""}</span></button>`).join("")}</div></div>`;
+          <span>${esc(c.issuer)} · 1 token = ${esc(c.shares_label || c.multiplier)}</span></button>`).join("")}</div></div>`;
       document.querySelectorAll(".choice").forEach((b) => b.addEventListener("click", () => { $("t").value = b.dataset.s; $("f").requestSubmit(); }));
       return;
     }
@@ -104,6 +104,7 @@ $("f").addEventListener("submit", async (e) => {
         ${naive && !d.multiplier_conflict ? `<p class="trap">A bot that reads the per-share price as the token price would have bought <b>${money(naive)}</b> of ${esc(d.ticker)} instead of ${money(usd)}.</p>` : ""}
         ${d.onchain_supply ? `<p class="muted">On BNB Chain right now: ${Number(d.onchain_supply.toPrecision(6)).toLocaleString()} ${esc(d.symbol)} tokens in total (read from the token contract). Your order is ${(d.order_share_of_supply * 100).toFixed(2)}% of them — the issuer can mint more, so this is a size check, not market depth.</p>` : ""}
         ${d.next_open_ms && d.session !== "regular" ? `<p class="muted">Next trading session opens around ${esc(fmtTime(d.next_open_ms))}.</p>` : ""}
+        <p class="muted">Token contract on BNB Chain: <code>${esc(d.contract)}</code> (${esc(d.issuer || "")}) — check this address in your wallet before buying. Agents: <code>stockguard gate ${esc(d.symbol)} --usd ${usd}</code></p>
         ${d.attestation_daily ? `<p class="muted">${esc(d.name || d.symbol)} — issuer's <a href="${esc(d.attestation_daily)}" target="_blank" rel="noopener">daily attestation report</a> (proof the tokens are backed by real shares).</p>` : ""}
       </div>`;
   } catch (err) {

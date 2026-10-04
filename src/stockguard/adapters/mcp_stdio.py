@@ -36,22 +36,29 @@ GATE_TOOL = {
             "side": {"type": "string", "enum": ["BUY", "SELL"], "default": "BUY"},
             "pay_with": {"type": "string", "enum": ["USDT", "USDC", "USD1", "U"], "default": "USDT"},
             "wallet_settings": {"type": "object", "description": "Output of `baw wallet settings --json` (optional)"},
+            "slippage": {"type": "number", "description": "Percent; omitted = the wallet's \"auto\" (disclosed)"},
+            "trigger_share_price": {"type": "number", "description": "Limit order at this price per SHARE; the tool "
+                                                                    "returns the per-TOKEN trigger for `baw limit-order`"},
+            "pay_price": {"type": "number", "description": "USD price of BNB when pay_with is BNB"},
         },
         "required": ["ticker", "usd_amount"],
     },
 }
 
 
-def _gate(guard, a):
+def _gate(guard, a, auditor=None):
+    import time
     from stockguard.adapters.agentic_wallet import commands, parse_wallet_settings
     from stockguard.application.wallet_gate import gate_swap
     out = gate_swap(guard, a["ticker"], float(a["usd_amount"]), side=a.get("side", "BUY"),
-                    pay_with=a.get("pay_with", "USDT"), settings=parse_wallet_settings(a.get("wallet_settings")))
+                    pay_with=a.get("pay_with", "USDT"), settings=parse_wallet_settings(a.get("wallet_settings")),
+                    auditor=auditor, slippage=a.get("slippage"), trigger_share_price=a.get("trigger_share_price"),
+                    pay_price=a.get("pay_price"), today=time.strftime("%Y-%m-%d", time.gmtime()))
     out["baw_commands"] = commands(out)
     return out
 
 
-def handle(guard, msg):
+def handle(guard, msg, auditor=None):
     mid, method, params = msg.get("id"), msg.get("method"), msg.get("params") or {}
     if method == "initialize":
         res = {"protocolVersion": params.get("protocolVersion", "2024-11-05"),
@@ -65,9 +72,11 @@ def handle(guard, msg):
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602,
                     "message": "arguments 'ticker' (string) and 'usd_amount' (positive number) are required"}}
         try:
-            res = {"content": [{"type": "text", "text": json.dumps(_gate(guard, a))}], "isError": False}
+            res = {"content": [{"type": "text", "text": json.dumps(_gate(guard, a, auditor))}], "isError": False}
         except ValueError as e:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": str(e)}}
+        except Exception as e:   # never take the server down; the agent sees an error result
+            res = {"content": [{"type": "text", "text": f"{type(e).__name__}: {e}"}], "isError": True}
     elif method == "tools/call":
         if params.get("name") != TOOL["name"]:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown tool"}}
@@ -90,7 +99,7 @@ def handle(guard, msg):
     return {"jsonrpc": "2.0", "id": mid, "result": res}
 
 
-def run(guard, fin, fout):
+def run(guard, fin, fout, auditor=None):
     for line in fin:
         line = line.strip()
         if not line:
@@ -100,7 +109,7 @@ def run(guard, fin, fout):
         except ValueError:
             out = {"jsonrpc": "2.0", "id": None, "error": {"code": -32700, "message": "parse error"}}
         else:
-            out = handle(guard, msg)
+            out = handle(guard, msg, auditor)
         if out is not None:
             fout.write(json.dumps(out) + "\n")
             fout.flush()

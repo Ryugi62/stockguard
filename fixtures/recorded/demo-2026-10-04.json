@@ -1,5 +1,5 @@
 {
- "captured_at_utc": "2026-10-04T04:39:58Z",
+ "captured_at_utc": "2026-10-04T04:54:37Z",
  "source": "Binance Web3 public RWA endpoints (no key) + BSC public RPC totalSupply()",
  "list": [
   {
@@ -201,7 +201,7 @@
     "priceChangePct24h": "0",
     "totalHolders": null,
     "sharesMultiplier": "10",
-    "volume24h": "2593443596.165547304785",
+    "volume24h": "2230529353",
     "marketCap": null,
     "fdv": null,
     "circulatingSupply": "10000",
@@ -211,13 +211,13 @@
    },
    "stockInfo": {
     "price": "67.062353",
-    "priceHigh52w": "124.86",
-    "priceLow52w": "65.08",
-    "volume": "38672123.481345",
+    "priceHigh52w": "124.8600",
+    "priceLow52w": "65.0800",
+    "volume": "33291500",
     "averageVolume": "42828069",
     "avgVolume30d": "32255007",
     "sharesOutstanding": "4163939676",
-    "marketCap": "279208348837",
+    "marketCap": "279233794673.00",
     "turnoverRate": null,
     "amplitude": null,
     "priceToEarnings": "20.4600",
@@ -256,11 +256,11 @@
    "symbol": "NFLXB",
    "ticker": "NFLX",
    "tokenInfo": {
-    "price": "67.71",
+    "price": "67.59",
     "priceHigh24h": null,
     "priceLow24h": null,
-    "priceChange24h": "0.65",
-    "priceChangePct24h": "0.969",
+    "priceChange24h": "0.53",
+    "priceChangePct24h": "0.79",
     "totalHolders": null,
     "sharesMultiplier": "1",
     "volume24h": "2230529353",
@@ -277,7 +277,7 @@
     "priceLow52w": "65.0800",
     "volume": "33291500",
     "averageVolume": null,
-    "avgVolume30d": "32254955",
+    "avgVolume30d": "32255007",
     "sharesOutstanding": null,
     "marketCap": "279233794673.00",
     "turnoverRate": null,
@@ -442,23 +442,23 @@
    "symbol": "AAPLon",
    "ticker": "AAPL",
    "tokenInfo": {
-    "price": "334.580768669045412895",
+    "price": "334.600836190520217317",
     "priceHigh24h": "335.16272679181475",
     "priceLow24h": "334.4302622579844",
-    "priceChange24h": "-0.110371368111447105",
-    "priceChangePct24h": "-0.0329770809287613222",
-    "totalHolders": "33627",
+    "priceChange24h": "-0.090303846636642683",
+    "priceChangePct24h": "-0.0269812480326241377",
+    "totalHolders": "33629",
     "sharesMultiplier": "1.003376073740221058",
-    "volume24h": "11098230750.30675537",
-    "marketCap": "3247248.401988979648985935631447494452952595",
-    "fdv": "3247248.401988979648985935631447494452952595",
+    "volume24h": "11097565179.26369285",
+    "marketCap": "3247443.165804306393511278796731581708379937",
+    "fdv": "3247443.165804306393511278796731581708379937",
     "circulatingSupply": "9705.424537418749310861",
     "maxSupply": "9705.424537418749310861",
     "bnTrader": "19655",
     "bnHolder": "3339"
    },
    "stockInfo": {
-    "price": "333.495",
+    "price": "333.475",
     "priceHigh52w": "345.34",
     "priceLow52w": "243.42",
     "volume": "33278552.153126",
@@ -514,7 +514,7 @@
     "priceChangePct24h": "2.31",
     "totalHolders": null,
     "sharesMultiplier": "1.0032690125398187",
-    "volume24h": "11098230750.30675537",
+    "volume24h": "11097565179.26369285",
     "marketCap": null,
     "fdv": null,
     "circulatingSupply": "9999.999999999999999999",
@@ -523,7 +523,7 @@
     "bnHolder": "6"
    },
    "stockInfo": {
-    "price": "333.495",
+    "price": "333.475",
     "priceHigh52w": "345.34",
     "priceLow52w": "243.42",
     "volume": "33278552.153126",
@@ -572,8 +572,8 @@
     "price": "333.53130001219053655878",
     "priceHigh24h": null,
     "priceLow24h": null,
-    "priceChange24h": "0.08004831248605058928",
-    "priceChangePct24h": "0.024",
+    "priceChange24h": "0.07004227342529426562",
+    "priceChangePct24h": "0.021",
     "totalHolders": null,
     "sharesMultiplier": "1.000603906075632366",
     "volume24h": "8270637262",
@@ -582,7 +582,7 @@
     "circulatingSupply": null,
     "maxSupply": null,
     "bnTrader": "5504",
-    "bnHolder": "5436"
+    "bnHolder": "5441"
    },
    "stockInfo": {
     "price": null,
@@ -949,5 +949,169 @@
   "0x9d275685dc284c8eb1c79f6aba7a63dc75ec890a": 10024.852143472694,
   "0x431a3bee82e2ca41e49895cbece5bb0f76a89b7a": 17509.1608041,
   "0xfbf2398df672cee4afcc2a4a733222331c742a6a": 10201.874683698848
+ },
+ "audit": {
+  "0x7048f5227b032326cc8dbc53cf3fddd947a2c757": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "205697f8-79a6-410f-b944-5d9ee90a5223",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0xa6a65ac27e76cd53cb790473e4345c46e5ebf961": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "a76d9954-4f3e-4370-a2c2-e23c13c86454",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0xd6829ea836b6fa224d099d40e54b31262f874631": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "d620a849-d7d8-4a98-a579-1e3c942afa5a",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0xfc263946439b0d802bf4c5a6fcd34e2885259f91": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "0c9f990d-8082-44a3-afd3-1f7e94efc104",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0x5a9d924fc336a5ec8cf3b1909aa660533b50b015": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "d3a9982c-83f6-48bb-b194-e7d8a289cf1d",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0x390a684ef9cade28a7ad0dfa61ab1eb3842618c4": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "0709e1d5-7a8a-4bec-a143-1d0878640b65",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0x9d275685dc284c8eb1c79f6aba7a63dc75ec890a": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "ee9fdab6-f3c8-4c25-8a1d-037e3371f9c6",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0x431a3bee82e2ca41e49895cbece5bb0f76a89b7a": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "70249272-d371-4281-9bb5-1e12afb2adcc",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  },
+  "0xfbf2398df672cee4afcc2a4a733222331c742a6a": {
+   "code": "000000",
+   "message": null,
+   "messageDetail": null,
+   "data": {
+    "requestId": "1f5aca13-496a-457d-89c3-05430d3e3bdf",
+    "hasResult": false,
+    "isHidden": true,
+    "isSupported": false,
+    "showYellowDot": null,
+    "riskLevelEnum": "LOW",
+    "riskLevel": -1,
+    "extraInfo": null,
+    "riskItems": [],
+    "riskAlert": null
+   },
+   "success": true
+  }
  }
 }

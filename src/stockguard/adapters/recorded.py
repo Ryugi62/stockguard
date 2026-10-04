@@ -45,3 +45,13 @@ class RecordedSupply:
 
     def total_supply(self, token: str) -> Optional[float]:
         return self.supply.get(token)
+
+
+class RecordedAudit:
+    """Recorded query-token-audit responses; a token without a recording counts as "audit unavailable"."""
+    def __init__(self, path: Optional[str] = None):
+        self.audits = _load(path).get("audit", {})
+
+    def audit(self, address: str):
+        from stockguard.adapters.token_audit import parse_audit
+        return parse_audit(self.audits.get(address))

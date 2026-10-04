@@ -22,7 +22,7 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 
 ## F3. Multipliers far from 1, in both directions
 - `multiplier` ≥ 2 on 9 BSC tokens (KLACon 10.026, NFLXon 10, PPLTon 10, PALLon 5, CVNAon 5, NOWon 5, IWFon 4.013, CRWDon 4, APHon 2.004) and < 0.2 on 2 (ENLVon 0.066667, SOXSon 0.1017).
-- Replay (`python3 -m stockguard replay data/scan-...jsonl --budget 1000`) — a **hypothetical** agent (not an observed one) that wants $1,000 of exposure, reads the per-share price, and buys that many tokens would end up with $10,026 of KLAC, $10,000 of NFLX, but only $66.67 of ENLV.
+- Exposure table (`python3 -m stockguard replay data/scan-...jsonl --budget 1000`, arithmetic on real multipliers, not an observed agent): sizing $1,000 by the per-share price buys $10,026 of KLAC, $10,000 of NFLX, but only $66.67 of ENLV. On the Agentic Wallet market-order path a BUY is sized in USDT, so this error shows up in `limit-order --triggerPrice` (per token) and SELL token quantities.
 - The doc does explain the multiplier (Key Concept). The finding is about defaults: the price most UIs and agents show next to a ticker is per token, and nothing in the payload flags "this token is not ~1 share".
 
 ## F4. One entry in the stock list has no symbol in the dynamic endpoint
@@ -58,7 +58,7 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 
 ## F11. xStocks with no token price (77 of 130)
 - `tokenInfo.price: null` on 77 xStocks (ABBVx, ABTx, ACNx, ADBEx …), while `statusInfo.reasonCode` is `TRADING`. StockGuard BLOCKs these ("No token price").
-- Among the 28 xStocks that do have both prices, the largest gaps vs `stockInfo.price` were GMEx +844.9%, MRVLx −88.1%, UBERx −87.5%. These look like stale token prices or unit mismatches, not real premiums. Treat them as data issues, not trading signals.
+- 44 xStocks have both a token price and a stock price; for the 28 of them without a multiplier conflict, the largest gaps vs `stockInfo.price` were GMEx +844.9%, MRVLx −88.1%, UBERx −87.5%. These look like stale token prices or unit mismatches, not real premiums. Treat them as data issues, not trading signals.
 
 ## F12. bStocks carry no stock price at all (87 of 87)
 - `stockInfo.price: null` for every bStock on 2026-10-04, so no premium/discount can be computed for that issuer on weekends. bStocks' `dailyAttestationReports` is an absolute URL (`https://www.binance.com/proof-of-collateral/bstocks`), while Ondo's is a relative path. This broke our first link builder (fixed, test `test_absolute_attestation_url_is_not_prefixed`).
@@ -67,12 +67,18 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 - 120 tickers exist under more than one issuer, 38 under all three. The multiplier differs by more than 1.5× for NFLX (on 10 · x 1-or-10 · B 1), CRWD (on 4 · x 1-or-4 · B 1), TQQQ (x 2.009 in the price feed) and SOXS (on 0.102 · B 1.009).
 - The Agentic Wallet skill says, for a bare ticker, "do not default to Ondo. Ask the user which provider they mean". The tokenized-securities skill's own lookup only knows `type=1`. StockGuard resolves all three and returns `ASK` with the choices.
 
+## F14. The wallet's mandatory token audit can't see tokenized stocks
+- Reproduce: `curl -X POST https://web3.binance.com/bapi/defi/v1/public/wallet-direct/security/token/audit -H 'Content-Type: application/json' -H 'source: agent' -H 'User-Agent: binance-web3/1.4 (Skill)' -d '{"binanceChainId":"56","contractAddress":"0x7048f5227b032326cc8dbc53cf3fddd947a2c757","requestId":"<uuid4>"}'`
+- 45 of 45 sampled stock tokens (the first 15 of each issuer's list, 2026-10-04) returned `hasResult: false, isSupported: false, riskLevel: -1`. USDT returned `hasResult: true, riskLevel: 3` (MEDIUM).
+- The Agentic Wallet skill (`references/security.md` §1) requires this audit before every `market-order swap` / `limit-order`, and when it is unavailable it requires "explicit user acknowledgment". So every tokenized-stock order an agent places ends in an acknowledgment prompt that carries no information about the stock. StockGuard is built to supply the stock-specific checks that the audit does not cover.
+- Recorded responses for the demo tokens: `fixtures/recorded/demo-2026-10-04.json` → `audit`.
+
 ## Latency (2026-10-04 04:43 UTC, n=10 per endpoint, `PYTHONPATH=src python3 scripts/latency.py`, raw `data/latency-20261004.json`)
 - p50 74–111 ms, p95 130–189 ms, max 424 ms (list type=2). The `list` call is the slowest. A full 675-token scan takes 13.8 s with 8 workers.
 
 ## Agentic Wallet skill — what the gate is built on (binance-skills-hub, `binance-agentic-wallet` v1.12.0, cloned 2026-10-04)
 - Swap syntax and the "orderId is not a completed swap — poll" rule: `references/market-order.md`. Wallet policy fields: `references/wallet-setting.md`. Fail-closed / no address hallucination / ask the provider: `SKILL.md`.
-- Things that slowed us down (raw, for the report): the token-audit pre-check (`references/security.md`) depends on a separate skill (`query-token-audit`). The skill tells agents to "Determine support at runtime" for limit orders, and quotes an `Ondo-related tokens cannot be traded` error. Wallet settings "can only be changed in the Binance App", so an agent can read the limits but never set them.
+- Things that slowed us down (raw, for the report): the token-audit pre-check (`references/security.md`) depends on a separate skill (`query-token-audit`), and it has no data for stock tokens (F14). `limit-order --triggerPrice` is a per-token USD price, so on a multiplier-10 token a per-share target is off by 10×. The skill tells agents to "Determine support at runtime" for limit orders, and quotes an `Ondo-related tokens cannot be traded` error. Wallet settings "can only be changed in the Binance App", so an agent can read the limits but never set them.
 
 Reading guide for the report: F1, F2, F6 and F12 are one theme — **how far can a client trust the reference price**. F9, F10, F11 and F13 are a second one — **the same API means different things per issuer**. Both lead to the redesign questions in `docs/dx-report-TEMPLATE.md`.
 

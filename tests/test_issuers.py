@@ -93,3 +93,23 @@ def test_null_market_status_is_reported_as_data_issue():
     from stockguard.domain.guard import find_inconsistencies
     s = to_snapshot(load("dynamic_nflxb_weekend.json"), load("market_status_weekend.json"))
     assert any("marketStatus is null" in x for x in find_inconsistencies(s))
+
+
+def test_conflict_share_count_follows_the_price_ratio():
+    # NFLXx: token 71.30, stock 67.06 -> price implies ~1 share per token, not 10
+    r = Guard(ThreeIssuers(), to_snapshot).check("NFLXx", "BUY", 1)
+    assert r["share_equivalent"] == 1.0 and "1 or 10" in r["shares_label"]
+
+
+def test_conflict_plus_supply_mismatch_blocks():
+    class Chain:
+        def total_supply(self, token):
+            return 100000.0           # NFLXx on-chain; the API says circulatingSupply 10000
+    r = Guard(ThreeIssuers(), to_snapshot, onchain=Chain()).check("NFLXx", usd_amount=100)
+    assert r["verdict"] == "BLOCK" and any("can't be verified" in x for x in r["reasons"])
+
+
+def test_describe_gives_one_consistent_label():
+    g = Guard(ThreeIssuers(), to_snapshot)
+    c = {x["symbol"]: x for x in g.describe(g.tokens_candidates("NFLX"))}
+    assert c["NFLXx"]["shares_label"].startswith("1 or 10") and c["NFLXon"]["shares_label"] == "10 shares"

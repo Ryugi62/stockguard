@@ -19,7 +19,8 @@ def to_snapshot(dynamic: Dict, market: Optional[Dict] = None) -> Snapshot:
     st = dynamic.get("statusInfo") or {}
     token_price = _f(tok.get("price")) or 0.0
     stock_price = _f(stk.get("price"))
-    mult = _f(tok.get("sharesMultiplier")) or 1.0
+    raw_mult = _f(tok.get("sharesMultiplier"))
+    mult = raw_mult if raw_mult and raw_mult > 0 else 1.0
     derived = False
     if stock_price and token_price:
         # Outside US hours the API fills stockInfo.price with tokenPrice / multiplier (observed 2026-10-03).
@@ -37,4 +38,5 @@ def to_snapshot(dynamic: Dict, market: Optional[Dict] = None) -> Snapshot:
         market_session=(market or {}).get("marketStatus"),
         reference_derived=derived,
         next_open_ms=int(st["nextOpenTime"]) if st.get("nextOpenTime") else None,
+        multiplier_known=bool(raw_mult and raw_mult > 0),
     )

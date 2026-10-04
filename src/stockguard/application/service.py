@@ -38,7 +38,8 @@ class AmbiguousTicker(LookupError):
     def message(self) -> str:
         def shares(m):
             return "1 share" if abs(m - 1) <= 0.05 else f"{m:.4g} shares"
-        opts = "; ".join(f"{c['symbol']} ({c['issuer']}, 1 token = {shares(c['multiplier'])})" for c in self.candidates)
+        opts = "; ".join(f"{c['symbol']} ({c['issuer']}, 1 token = {c.get('shares_label') or shares(c['multiplier'])})"
+                         for c in self.candidates)
         return f"'{self.query}' is {len(self.candidates)} different tokens on BNB Chain: {opts}. Pick one by its symbol."
 
 
@@ -83,6 +84,24 @@ class Guard:
         return {"symbol": t.get("symbol"), "ticker": t.get("ticker"), "issuer": issuer_name(t.get("type")),
                 "multiplier": _f(t.get("multiplier")) or 1.0, "contract": t.get("contractAddress")}
 
+    def tokens_candidates(self, ticker: str) -> List[Dict]:
+        q = ticker.strip().lower()
+        return [self.candidate(t) for t in self.tokens() if str(t.get("ticker", "")).lower() == q]
+
+    def describe(self, candidates: List[Dict]) -> List[Dict]:
+        """Add the price-feed multiplier and one consistent label ("1 share", "10 shares", "1 or 10 shares?")."""
+        out = []
+        for c in candidates:
+            c = dict(c)
+            try:
+                s, _ = self._snapshot({"contractAddress": c["contract"], "multiplier": c["multiplier"]})
+                c["feed_multiplier"], c["multiplier_conflict"] = s.multiplier, s.multiplier_conflict
+            except Exception:
+                c["feed_multiplier"], c["multiplier_conflict"] = None, False
+            c["shares_label"] = shares_label(c["multiplier"], c.get("feed_multiplier"), c["multiplier_conflict"])
+            out.append(c)
+        return out
+
     def compare(self, ticker: str, side: str = "BUY", token_qty: Optional[float] = None,
                 usd_amount: Optional[float] = None) -> List[Dict]:
         """The same underlying from every issuer, checked side by side (Ondo, xStocks, bStocks)."""
@@ -101,6 +120,7 @@ class Guard:
         s = self.to_snapshot(dyn, self.client.market_status())
         if _f(t.get("multiplier")):
             s = dataclasses.replace(s, list_multiplier=_f(t.get("multiplier")))
+        s = dataclasses.replace(s, api_supply=_f((dyn.get("tokenInfo") or {}).get("circulatingSupply")))
         notes = []
         if self.onchain is not None:
             try:
@@ -179,6 +199,14 @@ class Guard:
                 yield f.result()
 
 
+def shares_label(list_m: float, feed_m: Optional[float] = None, conflict: bool = False) -> str:
+    def one(m):
+        return "1 share" if abs(m - 1) <= 0.05 else f"{m:.4g} shares"
+    if conflict and feed_m:
+        return f"{list_m:.4g} or {feed_m:.4g} shares? (the API disagrees)"
+    return one(feed_m if feed_m else list_m)
+
+
 def render(s: Snapshot, v: Verdict, side: str, qty: float) -> Dict:
     return {
         "symbol": s.symbol, "ticker": s.ticker, "side": side, "token_qty": qty,
@@ -186,6 +214,8 @@ def render(s: Snapshot, v: Verdict, side: str, qty: float) -> Dict:
         "onchain_supply": s.onchain_supply, "order_share_of_supply": v.order_share_of_supply,
         "share_equivalent": v.share_equivalent, "multiplier": s.multiplier,
         "list_multiplier": s.list_multiplier, "multiplier_conflict": s.multiplier_conflict,
+        "shares_label": shares_label(s.list_multiplier or s.multiplier, s.multiplier, s.multiplier_conflict),
+        "api_supply": s.api_supply, "supply_mismatch": s.supply_mismatch,
         "token_price": s.token_price, "stock_price": s.stock_price,
         "reference_price": v.reference_price, "premium": v.premium,
         "reference_derived": s.reference_derived,

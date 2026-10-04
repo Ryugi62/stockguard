@@ -126,3 +126,29 @@ def test_risk_ranks_x10_closed_above_plain_closed():
     x10 = check_trade(snap(session="closed", status="MARKET_CLOSED", multiplier=10, token_price=1000), "BUY", 1)
     assert x10.risk > plain.risk > 0
     assert check_trade(snap(status="ASSET_PAUSED", reason="stock_split"), "BUY", 1).risk == 100
+
+
+def test_market_wide_pause_blocks_even_when_the_asset_reports_no_session():
+    # xStocks/bStocks send an empty per-asset session (F9); the market-wide halt must still win
+    v = check_trade(snap(session="", status="TRADING", market_session="pause"), "BUY", 1)
+    assert v.level == BLOCK
+
+
+def test_market_wide_overnight_warns_when_asset_session_is_empty():
+    v = check_trade(snap(session="", status="TRADING", market_session="overnight"), "BUY", 1)
+    assert v.level == WARN and any("Outside regular" in r for r in v.reasons)
+
+
+def test_empty_session_alone_warns():
+    v = check_trade(snap(session="", status="TRADING", market_session="regular"), "BUY", 1)
+    assert v.level == WARN and any("no market session" in r for r in v.reasons)
+
+
+def test_missing_multiplier_warns():
+    v = check_trade(snap(multiplier_known=False), "BUY", 1)
+    assert v.level == WARN and any("no multiplier" in r for r in v.reasons)
+
+
+def test_premium_risk_counts_only_beyond_threshold():
+    v = check_trade(snap(token_price=101.5), "BUY", 1)      # 1.5% premium, 1% threshold -> 5 points
+    assert v.risk == 5

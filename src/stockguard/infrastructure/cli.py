@@ -1,4 +1,4 @@
-"""stockguard CLI: demo | check | compare | gate | scan | serve | mcp | kline | replay"""
+"""stockguard CLI: demo | check | compare | gate | trade | scan | serve | mcp | kline | replay"""
 import argparse
 import json
 import os
@@ -9,6 +9,14 @@ from stockguard.adapters.binance_rwa import RwaClient, RwaError
 from stockguard.adapters.bsc_rpc import BscRpc
 from stockguard.adapters.mapping import to_snapshot
 from stockguard.application.service import AmbiguousTicker, Guard, TickerNotFound
+
+
+def build_auditor(offline: bool = False):
+    if offline:
+        from stockguard.adapters.recorded import RecordedAudit
+        return RecordedAudit()
+    from stockguard.adapters.token_audit import TokenAuditClient
+    return TokenAuditClient()
 
 
 def build_guard(offline: bool = False) -> Guard:
@@ -33,10 +41,19 @@ def _parser() -> argparse.ArgumentParser:
     c.add_argument("--threshold", type=float, default=0.01)
     cm = sub.add_parser("compare", parents=[common], help="Same stock from every issuer (Ondo, xStocks, bStocks)")
     cm.add_argument("ticker"); cm.add_argument("--usd", type=float, default=1000.0)
-    g = sub.add_parser("gate", parents=[common], help="Gate an Agentic Wallet swap: PROCEED | CONFIRM | ASK | REFUSE")
-    g.add_argument("ticker"); g.add_argument("--usd", type=float, required=True)
-    g.add_argument("--side", default="BUY"); g.add_argument("--pay-with", default="USDT")
+    order = argparse.ArgumentParser(add_help=False)
+    order.add_argument("ticker"); order.add_argument("--usd", type=float, required=True)
+    order.add_argument("--side", default="BUY"); order.add_argument("--pay-with", default="USDT")
+    order.add_argument("--slippage", type=float, default=None, help="percent; omitted = the wallet's \"auto\"")
+    order.add_argument("--trigger-share-price", type=float, default=None,
+                       help="limit order at this price per SHARE (converted to the per-token trigger)")
+    order.add_argument("--no-audit", action="store_true", help="skip the token security audit call")
+    g = sub.add_parser("gate", parents=[common, order], help="Gate an Agentic Wallet order: PROCEED | CONFIRM | ASK | REFUSE")
     g.add_argument("--wallet-settings", default=None, help="file with the output of `baw wallet settings --json`")
+    g.add_argument("--pay-price", type=float, default=None, help="USD price of BNB when --pay-with BNB")
+    tr = sub.add_parser("trade", parents=[common, order],
+                        help="Guarded trade through Agentic Wallet (needs `baw`, signed in): gate -> quote check -> yes -> swap -> poll")
+    tr.add_argument("--yes", action="store_true", help="skip the typed confirmation (only for PROCEED orders)")
     s = sub.add_parser("scan", parents=[common], help="Scan every BSC tokenized stock -> JSONL")
     s.add_argument("--out", default="data/snapshot.jsonl"); s.add_argument("--workers", type=int, default=8)
     s.add_argument("--limit", type=int, default=None)
@@ -44,7 +61,7 @@ def _parser() -> argparse.ArgumentParser:
     sub.add_parser("mcp", parents=[common], help="MCP stdio server (tools: check_tokenized_stock_trade, guard_agentic_wallet_swap)")
     k = sub.add_parser("kline", parents=[common], help="On-chain K-line candles + volume (reproduces DX finding F7)")
     k.add_argument("ticker"); k.add_argument("--interval", default="1d"); k.add_argument("--limit", type=int, default=10)
-    rp = sub.add_parser("replay", parents=[common], help="Dollar error of a naive 1-token-=-1-share bot on a scan file")
+    rp = sub.add_parser("replay", parents=[common], help="Multiplier exposure table: what $X becomes if 1 token is mistaken for 1 share (arithmetic on real multipliers)")
     rp.add_argument("scan_file"); rp.add_argument("--budget", type=float, default=1000.0)
     return p
 
@@ -53,7 +70,7 @@ def main(argv=None):
     a = _parser().parse_args(argv)
     if a.cmd == "demo":
         from stockguard.infrastructure.demo import run_demo
-        return run_demo(build_guard(offline=not a.live), live=a.live)
+        return run_demo(build_guard(offline=not a.live), live=a.live, auditor=build_auditor(offline=not a.live))
     if a.cmd == "replay":
         from stockguard.application.replay import naive_share_bot
         recs = [json.loads(l) for l in open(a.scan_file)]
@@ -63,6 +80,10 @@ def main(argv=None):
     try:
         _run(a, guard)
     except AmbiguousTicker as e:
+        try:
+            e.candidates = guard.describe(e.candidates)
+        except Exception:
+            pass
         sys.exit(e.message() + f" Example: stockguard check {e.candidates[0]['symbol']}  ·  side by side: "
                                f"stockguard compare {e.query}")
     except TickerNotFound as e:
@@ -85,10 +106,35 @@ def _run(a, guard: Guard):
     elif a.cmd == "gate":
         from stockguard.adapters.agentic_wallet import commands, parse_wallet_settings
         from stockguard.application.wallet_gate import gate_swap
-        settings = parse_wallet_settings(json.load(open(a.wallet_settings))) if a.wallet_settings else None
-        out = gate_swap(guard, a.ticker, a.usd, side=a.side, pay_with=a.pay_with, settings=settings)
+        settings = None
+        if a.wallet_settings:
+            try:
+                settings = parse_wallet_settings(json.load(open(a.wallet_settings)))
+            except (OSError, ValueError) as e:
+                sys.exit(f"Can't read --wallet-settings {a.wallet_settings}: {e}. Save the output of "
+                         f"`baw wallet settings --json` to that file.")
+        out = gate_swap(guard, a.ticker, a.usd, side=a.side, pay_with=a.pay_with, settings=settings,
+                        auditor=None if a.no_audit else build_auditor(a.offline), slippage=a.slippage,
+                        trigger_share_price=a.trigger_share_price, pay_price=a.pay_price,
+                        today=time.strftime("%Y-%m-%d", time.gmtime()))
         out["baw_commands"] = commands(out)
         print(json.dumps(out, indent=2))
+    elif a.cmd == "trade":
+        from stockguard.adapters.agentic_wallet import AgenticWallet, BawRunner
+        from stockguard.application.trade import run_guarded_trade
+
+        def confirm(summary):
+            g = summary["gate"]
+            print(json.dumps(summary, indent=2))
+            if a.yes and g["action"] == "PROCEED":
+                return True
+            return input(f"Place {g['side']} ${g['approved_usd']:,.2f} of {g['symbol']} through Agentic Wallet? "
+                         f"Type yes: ").strip().lower() == "yes"
+        r = run_guarded_trade(guard, AgenticWallet(BawRunner()), a.ticker, a.usd, side=a.side, pay_with=a.pay_with,
+                              slippage=a.slippage, auditor=None if a.no_audit else build_auditor(a.offline),
+                              trigger_share_price=a.trigger_share_price, confirm=confirm,
+                              today=time.strftime("%Y-%m-%d", time.gmtime()))
+        print(json.dumps(r, indent=2))
     elif a.cmd == "scan":
         os.makedirs(os.path.dirname(a.out) or ".", exist_ok=True)
         t0, n, bad, inc = time.time(), 0, 0, 0
@@ -109,7 +155,7 @@ def _run(a, guard: Guard):
                           "last_close": rows[-1][4] if rows else None, "raw": rows}, indent=1))
     elif a.cmd == "mcp":
         from stockguard.adapters.mcp_stdio import run
-        run(guard, sys.stdin, sys.stdout)
+        run(guard, sys.stdin, sys.stdout, auditor=build_auditor(a.offline))
 
 
 if __name__ == "__main__":

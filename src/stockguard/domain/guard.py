@@ -37,6 +37,15 @@ class Snapshot:
     next_open_ms: Optional[int] = None     # when trading reopens (epoch ms), if known
     onchain_supply: Optional[float] = None # token totalSupply read from the BSC contract
     list_multiplier: Optional[float] = None  # multiplier as the token list reports it (may disagree with the price feed)
+    api_supply: Optional[float] = None       # circulatingSupply as the API reports it
+    multiplier_known: bool = True            # False when the API sent no sharesMultiplier (1.0 is then an assumption)
+
+    @property
+    def supply_mismatch(self) -> bool:
+        """API circulatingSupply and on-chain totalSupply differ by more than 0.1%."""
+        if not self.api_supply or not self.onchain_supply:
+            return False
+        return abs(self.api_supply - self.onchain_supply) / self.onchain_supply > 0.001
 
     @property
     def multiplier_conflict(self) -> bool:
@@ -44,6 +53,14 @@ class Snapshot:
         if not self.list_multiplier or self.list_multiplier <= 0 or self.multiplier <= 0:
             return False
         return abs(self.list_multiplier / self.multiplier - 1.0) > MULTIPLIER_CONFLICT
+
+    @property
+    def effective_multiplier(self) -> float:
+        """On a multiplier conflict, the candidate the price ratio supports (token price / stock price)."""
+        if not self.multiplier_conflict or not self.stock_price or not self.token_price:
+            return self.multiplier
+        implied = self.token_price / self.stock_price
+        return min((self.list_multiplier, self.multiplier), key=lambda m: abs(math.log(implied / m)))
 
     @property
     def reference_price(self) -> Optional[float]:
@@ -83,7 +100,8 @@ LARGE_FLOAT_SHARE = 0.01   # an order bigger than 1% of all tokens in existence 
 
 # Risk weights (documented; additive, capped at 100). They rank warnings, they are not probabilities.
 RISK_WEIGHTS = {"halt_or_pause_or_no_token_price": 100, "multiplier_conflict": 30, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
-                "multiplier": "up to 30, grows with |log10(multiplier)|", "premium": "1 point per 0.1% beyond threshold, max 40",
+                "multiplier": "up to 30, grows with |log10(multiplier)|", "multiplier_missing": 30,
+                "premium": "1 point per 0.1% beyond threshold, max 40", "no_session_reported": 10,
                 "no_independent_price": 15}
 
 
@@ -94,12 +112,12 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
         raise ValueError("side must be BUY or SELL")
     if token_qty <= 0:
         raise ValueError("token_qty must be positive")
-    v = Verdict(ALLOW, [], share_equivalent=token_qty * s.multiplier,
+    v = Verdict(ALLOW, [], share_equivalent=token_qty * s.effective_multiplier,
                 reference_price=s.reference_price, premium=s.premium)
 
     if not s.token_price or s.token_price <= 0:
         v.raise_to(BLOCK, "No token price available right now — the order cannot be valued"); v.add_risk(100)
-    if s.status == "MARKET_PAUSED" or s.session == "pause":
+    if s.status == "MARKET_PAUSED" or s.session == "pause" or s.market_session == "pause":
         v.raise_to(BLOCK, "Market-wide trading halt"); v.add_risk(100)
     reason_key = (s.reason or "").strip().lower().replace(" ", "_")
     if s.status == "ASSET_PAUSED":
@@ -109,11 +127,19 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
         v.raise_to(WARN, f"{what} — trading restricted"); v.add_risk(40)
     if s.status == "MARKET_CLOSED" or s.session == "closed":
         v.raise_to(WARN, "US market is closed — the reference price is stale"); v.add_risk(15)
-    elif s.session in OUTSIDE_REGULAR or s.market_session == "closed":
+    elif s.session in OUTSIDE_REGULAR or s.market_session == "closed" or s.market_session in OUTSIDE_REGULAR:
         v.raise_to(WARN, "Outside regular US hours — the stock quote is from extended/overnight trading or the last close, "
                          "and liquidity is thin"); v.add_risk(10)
+    elif not s.session:
+        v.raise_to(WARN, "The issuer reports no market session for this token — treat the price as unverified"); v.add_risk(10)
 
-    if s.multiplier_conflict:
+    if not s.multiplier_known:
+        v.raise_to(WARN, "The API sent no multiplier for this token — the share count assumes 1 token = 1 share"); v.add_risk(30)
+    if s.multiplier_conflict and s.supply_mismatch:
+        v.raise_to(BLOCK, f"Token terms can't be verified — the API gives two multipliers ({s.list_multiplier:.4g} vs "
+                          f"{s.multiplier:.4g}) and its supply ({s.api_supply:,.0f}) disagrees with the chain "
+                          f"({s.onchain_supply:,.0f})"); v.add_risk(100)
+    elif s.multiplier_conflict:
         v.raise_to(WARN, f"The API gives two different multipliers for this token (token list: {s.list_multiplier:.4g}, "
                          f"price feed: {s.multiplier:.4g}) — the real share count is uncertain; size the order in dollars "
                          f"and check the issuer's terms"); v.add_risk(30)
@@ -127,9 +153,11 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
 
     p = s.premium
     if p is not None and side == "BUY" and p > premium_threshold:
-        v.raise_to(WARN, f"You would pay {p * 100:.1f}% above the reference price"); v.add_risk(min(40, int(p * 1000)))
+        v.raise_to(WARN, f"You would pay {p * 100:.1f}% above the reference price")
+        v.add_risk(min(40, int(round((p - premium_threshold) * 1000))))
     if p is not None and side == "SELL" and -p > premium_threshold:
-        v.raise_to(WARN, f"You would sell {-p * 100:.1f}% below the reference price"); v.add_risk(min(40, int(-p * 1000)))
+        v.raise_to(WARN, f"You would sell {-p * 100:.1f}% below the reference price")
+        v.add_risk(min(40, int(round((-p - premium_threshold) * 1000))))
     if s.reference_derived:
         v.raise_to(WARN, "No independent stock price right now — the quoted stock price is just the token price "
                          "divided by the multiplier, so any premium is invisible"); v.add_risk(15)
@@ -164,6 +192,8 @@ def find_inconsistencies(s: Snapshot) -> List[str]:
         out.append(f"{s.symbol}: undocumented marketStatus value '{s.session}'")
     if s.multiplier <= 0:
         out.append(f"{s.symbol}: non-positive multiplier {s.multiplier}")
+    if not s.multiplier_known:
+        out.append(f"{s.symbol}: sharesMultiplier is missing")
     if s.onchain_supply is not None and s.onchain_supply <= 0:
         out.append(f"{s.symbol}: zero on-chain supply")
     if s.stock_price is not None and s.stock_price <= 0:
