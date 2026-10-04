@@ -1,0 +1,37 @@
+{
+ "code": "000000",
+ "data": [
+  {
+   "chainId": "56",
+   "contractAddress": "0x7048f5227b032326cc8dbc53cf3fddd947a2c757",
+   "symbol": "NFLXon",
+   "ticker": "NFLX",
+   "type": 1,
+   "assetType": 1,
+   "multiplier": "10",
+   "d": 18
+  },
+  {
+   "chainId": "56",
+   "contractAddress": "0xa6a65ac27e76cd53cb790473e4345c46e5ebf961",
+   "symbol": "NFLXx",
+   "ticker": "NFLX",
+   "type": 2,
+   "assetType": 1,
+   "multiplier": "1",
+   "lastUpdateTime": 1786454612886,
+   "d": 18
+  },
+  {
+   "chainId": "56",
+   "contractAddress": "0xd6829ea836b6fa224d099d40e54b31262f874631",
+   "symbol": "NFLXB",
+   "ticker": "NFLX",
+   "type": 3,
+   "multiplier": "1",
+   "cs": "NFLXBUSDT",
+   "asset": "NFLXB",
+   "d": 18
+  }
+ ]
+}

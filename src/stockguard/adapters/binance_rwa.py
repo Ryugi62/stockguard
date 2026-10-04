@@ -3,7 +3,9 @@ import json
 import time
 import urllib.parse
 import urllib.request
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Sequence
+
+from stockguard.domain.issuers import LIST_TYPES
 
 BASE = "https://www.binance.com/bapi/defi"
 PATHS = {
@@ -52,9 +54,13 @@ class RwaClient:
                 self._sleep(self.backoff * (2 ** attempt))
         raise RwaError(f"{key}: failed after {self.retries} attempts: {last}")
 
-    def list_tokens(self, chain_id: str = "56") -> List[Dict]:
-        data = self._call("list", type=1) or []
-        return [t for t in data if str(t.get("chainId")) == str(chain_id)]
+    def list_tokens(self, chain_id: str = "56", types: Sequence[int] = LIST_TYPES) -> List[Dict]:
+        """All issuers: type 1 Ondo (…on), 2 xStocks (…x), 3 bStocks (…B)."""
+        out: List[Dict] = []
+        for t in types:
+            data = self._call("list", type=t) or []
+            out += [{**x, "type": x.get("type", t)} for x in data if str(x.get("chainId")) == str(chain_id)]
+        return out
 
     def market_status(self) -> Dict:
         return self._call("market_status") or {}

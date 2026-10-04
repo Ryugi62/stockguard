@@ -21,13 +21,53 @@ TOOL = {
 }
 
 
+GATE_TOOL = {
+    "name": "guard_agentic_wallet_swap",
+    "description": ("Call this BEFORE any Binance Agentic Wallet `baw market-order swap` of a tokenized US stock on BNB "
+                    "Chain. Returns PROCEED, CONFIRM (show the reasons and get an explicit yes), ASK (the ticker is "
+                    "several tokens — ask which issuer) or REFUSE (do not trade), plus the exact baw quote/swap/poll "
+                    "commands sized in the right units. Pass the output of `baw wallet settings --json` as "
+                    "wallet_settings to respect the wallet's daily quota and allowed-token list. Never signs."),
+    "inputSchema": {
+        "type": "object",
+        "properties": {
+            "ticker": {"type": "string", "description": "Token symbol (NFLXon, NFLXx, NFLXB), ticker or contract"},
+            "usd_amount": {"type": "number", "description": "Order size in US dollars"},
+            "side": {"type": "string", "enum": ["BUY", "SELL"], "default": "BUY"},
+            "pay_with": {"type": "string", "enum": ["USDT", "USDC", "USD1", "U"], "default": "USDT"},
+            "wallet_settings": {"type": "object", "description": "Output of `baw wallet settings --json` (optional)"},
+        },
+        "required": ["ticker", "usd_amount"],
+    },
+}
+
+
+def _gate(guard, a):
+    from stockguard.adapters.agentic_wallet import commands, parse_wallet_settings
+    from stockguard.application.wallet_gate import gate_swap
+    out = gate_swap(guard, a["ticker"], float(a["usd_amount"]), side=a.get("side", "BUY"),
+                    pay_with=a.get("pay_with", "USDT"), settings=parse_wallet_settings(a.get("wallet_settings")))
+    out["baw_commands"] = commands(out)
+    return out
+
+
 def handle(guard, msg):
     mid, method, params = msg.get("id"), msg.get("method"), msg.get("params") or {}
     if method == "initialize":
         res = {"protocolVersion": params.get("protocolVersion", "2024-11-05"),
-               "capabilities": {"tools": {}}, "serverInfo": {"name": "stockguard", "version": "0.1.0"}}
+               "capabilities": {"tools": {}}, "serverInfo": {"name": "stockguard", "version": "0.3.0"}}
     elif method == "tools/list":
-        res = {"tools": [TOOL]}
+        res = {"tools": [TOOL, GATE_TOOL]}
+    elif method == "tools/call" and params.get("name") == GATE_TOOL["name"]:
+        a = params.get("arguments") or {}
+        if not isinstance(a.get("ticker"), str) or not a["ticker"].strip() \
+                or not isinstance(a.get("usd_amount"), (int, float)) or a["usd_amount"] <= 0:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602,
+                    "message": "arguments 'ticker' (string) and 'usd_amount' (positive number) are required"}}
+        try:
+            res = {"content": [{"type": "text", "text": json.dumps(_gate(guard, a))}], "isError": False}
+        except ValueError as e:
+            return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": str(e)}}
     elif method == "tools/call":
         if params.get("name") != TOOL["name"]:
             return {"jsonrpc": "2.0", "id": mid, "error": {"code": -32602, "message": "unknown tool"}}

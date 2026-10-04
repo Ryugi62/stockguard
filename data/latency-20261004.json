@@ -1,0 +1,48 @@
+{
+ "measured_at_utc": "2026-10-04T04:43:18Z",
+ "client": "South Korea, home connection",
+ "results": {
+  "list type=1 (Ondo)": {
+   "n": 10,
+   "p50_ms": 111,
+   "p95_ms": 189,
+   "max_ms": 244
+  },
+  "list type=2 (xStocks)": {
+   "n": 10,
+   "p50_ms": 83,
+   "p95_ms": 173,
+   "max_ms": 424
+  },
+  "list type=3 (bStocks)": {
+   "n": 10,
+   "p50_ms": 85,
+   "p95_ms": 158,
+   "max_ms": 237
+  },
+  "market status": {
+   "n": 10,
+   "p50_ms": 77,
+   "p95_ms": 148,
+   "max_ms": 157
+  },
+  "dynamic (v2)": {
+   "n": 10,
+   "p50_ms": 78,
+   "p95_ms": 151,
+   "max_ms": 156
+  },
+  "meta": {
+   "n": 10,
+   "p50_ms": 74,
+   "p95_ms": 130,
+   "max_ms": 163
+  },
+  "kline 1d": {
+   "n": 10,
+   "p50_ms": 78,
+   "p95_ms": 150,
+   "max_ms": 165
+  }
+ }
+}

@@ -26,3 +26,22 @@ def test_api_check_usd_and_404_and_page():
         assert b"NFLX" in urllib.request.urlopen(base + "/api/tickers").read()
     finally:
         srv.shutdown()
+
+
+def test_ambiguous_ticker_returns_choices():
+    from test_issuers import ThreeIssuers
+    srv = ThreadingHTTPServer(("127.0.0.1", 0), make_handler(Guard(ThreeIssuers(), to_snapshot)))
+    threading.Thread(target=srv.serve_forever, daemon=True).start()
+    base = f"http://127.0.0.1:{srv.server_address[1]}"
+    try:
+        try:
+            urllib.request.urlopen(base + "/api/check?ticker=NFLX&usd=100")
+            assert False
+        except urllib.error.HTTPError as e:
+            assert e.code == 409
+            assert {c["symbol"] for c in json.load(e)["choices"]} == {"NFLXon", "NFLXx", "NFLXB"}
+        d = json.load(urllib.request.urlopen(base + "/api/check?ticker=NFLXx&usd=100"))
+        assert d["multiplier_conflict"] is True
+        assert b"NFLXB" in urllib.request.urlopen(base + "/api/tickers").read()
+    finally:
+        srv.shutdown()

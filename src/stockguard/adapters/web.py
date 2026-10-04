@@ -5,7 +5,7 @@ import time
 import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from stockguard.application.service import TickerNotFound
+from stockguard.application.service import AmbiguousTicker, TickerNotFound
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "..", "..", "web"))
 CACHE_TTL = 30.0
@@ -38,6 +38,8 @@ def make_handler(guard):
                 try:
                     r = guard.check(key[0], key[1], float(key[2]) if key[2] else None,
                                     usd_amount=float(key[3]) if key[3] else None)
+                except AmbiguousTicker as e:
+                    return self._json(409, {"error": e.message(), "choices": e.candidates})
                 except TickerNotFound as e:
                     hint = f" Did you mean {', '.join(e.suggestions)}?" if e.suggestions else ""
                     return self._json(404, {"error": f"No tokenized stock found for '{key[0]}'.{hint}"})
@@ -50,7 +52,9 @@ def make_handler(guard):
                 cache[key] = (time.time(), r)
                 return self._json(200, r)
             if u.path == "/api/tickers":
-                return self._json(200, sorted({t.get("ticker") for t in guard.tokens() if t.get("ticker")}))
+                names = {t.get("ticker") for t in guard.tokens() if t.get("ticker")}
+                names |= {t.get("symbol") for t in guard.tokens() if t.get("symbol")}
+                return self._json(200, sorted(names))
             path = "index.html" if u.path in ("/", "") else u.path.lstrip("/")
             full = os.path.abspath(os.path.join(ROOT, path))
             if not full.startswith(ROOT) or not os.path.isfile(full):
