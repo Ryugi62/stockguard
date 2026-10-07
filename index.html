@@ -1,0 +1,127 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StockGuard — Can I trade this right now?</title>
+<style>
+  :root { --bg:#f7f8fa; --card:#fff; --ink:#191f28; --sub:#6b7684; --line:#e5e8eb;
+          --allow:#00a86b; --warn:#f59f00; --block:#e5484d; --accent:#3182f6; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#101215; --card:#1a1d21; --ink:#f2f4f6; --sub:#9aa4b2; --line:#2b3036; } }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--ink); font:16px/1.55 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  main { max-width:560px; margin:0 auto; padding:40px 16px 64px; }
+  h1 { font-size:28px; line-height:1.25; margin:0 0 8px; letter-spacing:-0.02em; }
+  .lead { color:var(--sub); margin:0 0 28px; }
+  form { display:flex; gap:8px; flex-wrap:wrap; }
+  input, select, button { font:inherit; border-radius:12px; border:1px solid var(--line); padding:14px 16px; background:var(--card); color:var(--ink); }
+  input#t { flex:1 1 160px; }
+  input#usd { width:120px; }
+  code { font-size:.9em; }
+  a { color:var(--accent); }
+  button { background:var(--accent); color:#fff; border:none; font-weight:600; cursor:pointer; flex:1 1 100%; }
+  .card { background:var(--card); border-radius:20px; padding:24px; margin-top:24px; box-shadow:0 1px 2px rgba(0,0,0,.04); }
+  .verdict { font-size:22px; font-weight:700; display:flex; align-items:center; gap:10px; }
+  .dot { width:14px; height:14px; border-radius:50%; }
+  .ALLOW .dot { background:var(--allow); } .WARN .dot { background:var(--warn); } .BLOCK .dot { background:var(--block); }
+  ul { padding-left:20px; margin:12px 0 0; }
+  li { margin:6px 0; }
+  .facts { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-top:18px; }
+  .fact { border:1px solid var(--line); border-radius:14px; padding:12px; }
+  .fact b { display:block; font-size:18px; }
+  .fact span { color:var(--sub); font-size:13px; }
+  .muted { color:var(--sub); font-size:13px; margin-top:16px; }
+  .risk { white-space:nowrap; margin-left:auto; font-size:13px; font-weight:600; color:var(--sub); border:1px solid var(--line); border-radius:999px; padding:2px 10px; }
+  .trap { margin-top:16px; padding:12px 14px; border-radius:12px; background:rgba(245,159,0,.12); font-size:14px; }
+  .err { color:var(--block); }
+  .choices { display:grid; gap:8px; margin-top:12px; }
+  .choice { background:var(--card); color:var(--ink); border:1px solid var(--line); text-align:left; display:flex; flex-direction:column; gap:2px; }
+  .choice span { color:var(--sub); font-size:13px; font-weight:400; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Can I trade this tokenized stock right now?</h1>
+  <p class="lead">Type a US stock. StockGuard checks the market session, dividend and split pauses, and how many real shares one token is — before you press buy. Covers every stock token on BNB Chain: Ondo Global Markets (<code>…on</code>), xStocks (<code>…x</code>) and bStocks (<code>…B</code>).</p>
+  <form id="f">
+    <input id="t" placeholder="AAPL" value="NFLX" aria-label="Ticker" autocomplete="off" list="tickers">
+    <datalist id="tickers"></datalist>
+    <select id="s" aria-label="Side"><option>BUY</option><option>SELL</option></select>
+    <input id="usd" type="number" min="1" step="any" value="100" aria-label="Amount in US dollars" title="Amount in US dollars" placeholder="US$">
+    <button>Check</button>
+  </form>
+  <div id="out"></div>
+  <p id="mode" class="muted"></p>
+  <p class="muted">Data: Binance Web3 public tokenized-securities endpoints (BNB Chain). Not investment advice; StockGuard never touches your keys.</p>
+</main>
+<script src="boot.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const money = (x) => x == null ? "—" : "$" + Number(x).toLocaleString("en-US", {maximumFractionDigits: 2});
+const shareText = (d) => {   // on a multiplier conflict show both counts, unless the prices settle it to one
+  const b = Number(d.share_equivalent.toPrecision(4));
+  if (!d.multiplier_conflict) return b;
+  const a = Number((d.token_qty * d.list_multiplier).toPrecision(4)), c = Number((d.token_qty * d.multiplier).toPrecision(4));
+  const other = a === b ? c : a;
+  return other === b ? b : `${b} (or ${other})`;
+};
+const api = window.stockguardApi || ((u) => fetch(u));   // static build: Pyodide (site_src/boot.js)
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const HEAD = { ALLOW: "Looks fine to trade now", WARN: "You can trade, but read this first", BLOCK: "Don't trade this right now" };
+const SESSION = { regular: "US market is open", premarket: "US pre-market (thin trading)", postmarket: "US after-hours (thin trading)",
+  overnight: "US overnight session (thin trading)", offhours: "Token trades 24/7, US market is closed", closed: "US market is closed",
+  pause: "Trading halted" };
+const fmtTime = (ms) => {
+  const d = new Date(ms);
+  const et = d.toLocaleString("en-US", {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit"});
+  const local = d.toLocaleString(undefined, {weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short"});
+  return `${et} New York time (${local} for you)`;
+};
+api("/api/tickers").then((r) => r.json()).then((xs) => {
+  $("tickers").innerHTML = xs.map((x) => `<option value="${esc(x)}">`).join("");
+}).catch(() => {});
+$("f").addEventListener("submit", async (e) => {
+  e.preventDefault();
+  const t = $("t").value.trim(); if (!t) return;
+  $("out").innerHTML = '<div class="card">Checking…</div>';
+  try {
+    const usd = Number($("usd").value) || 100;
+    const r = await api(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&usd=${usd}`);
+    const d = await r.json();
+    if (r.status === 409 && d.choices) {
+      $("out").innerHTML = `<div class="card"><div class="verdict">${esc(t.toUpperCase())} is ${d.choices.length} different tokens</div>
+        <p class="muted">Different issuers, different terms. Pick the one you mean:</p>
+        <div class="choices">${d.choices.map((c) => `<button type="button" class="choice" data-s="${esc(c.symbol)}"><b>${esc(c.symbol)}</b>
+          <span>${esc(c.issuer)} · 1 token = ${esc(c.shares_label || c.multiplier)}</span></button>`).join("")}</div></div>`;
+      document.querySelectorAll(".choice").forEach((b) => b.addEventListener("click", () => { $("t").value = b.dataset.s; $("f").requestSubmit(); }));
+      return;
+    }
+    if (!r.ok) throw new Error(d.error || "Something went wrong");
+    const naive = Math.abs(d.multiplier - 1) > 0.05 ? usd * d.multiplier : null;
+    const perShare = d.multiplier && !d.multiplier_conflict ? d.token_price / d.multiplier : null;
+    $("out").innerHTML = `
+      <div class="card ${d.verdict}">
+        <div class="verdict"><span class="dot"></span>${HEAD[d.verdict]}<span class="risk" title="Ranks warnings, not a probability: halt/pause 100 · earnings 40 · market closed 15 · no independent price 15 · outside regular hours 10 · multiplier up to 30 · premium up to 40">risk ${d.risk}/100</span></div>
+        <ul>${d.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
+        ${(d.notes || []).map((x) => `<p class="muted">ℹ︎ ${esc(x)}</p>`).join("")}
+        <div class="facts">
+          <div class="fact"><b>${money(usd)} ≈ ${Number(d.token_qty.toPrecision(4))} tokens = ${shareText(d)} ${esc(d.ticker)} shares</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"}</span></div>
+          <div class="fact"><b>${money(d.token_price)}</b><span>per token (${perShare == null ? "per-share price unclear" : money(perShare) + " per share"}${d.reference_derived ? ", derived from the token price" : ""})</span></div>
+          <div class="fact"><b>${esc(SESSION[d.session] || d.session || (d.status === "TRADING" ? "Says trading — no session reported" : "Not reported"))}</b><span>right now</span></div>
+          <div class="fact"><b>${d.premium == null ? "Can't tell" : (d.premium * 100).toFixed(2) + "%"}</b><span>${d.premium == null ? "no independent stock price to compare with right now" : "token price vs. the real stock price"}</span></div>
+        </div>
+        ${d.multiplier_conflict ? `<p class="trap">The data feed contradicts itself on this token: the token list says 1 token = ${Number(d.list_multiplier.toPrecision(4))} share(s), the price feed says ${Number(d.multiplier.toPrecision(4))}. Size your order in dollars and check the issuer's terms.</p>` : ""}
+        ${naive && !d.multiplier_conflict ? `<p class="trap">A bot that reads the per-share price as the token price would have bought <b>${money(naive)}</b> of ${esc(d.ticker)} instead of ${money(usd)}.</p>` : ""}
+        ${d.onchain_supply ? `<p class="muted">On BNB Chain right now: ${Number(d.onchain_supply.toPrecision(6)).toLocaleString()} ${esc(d.symbol)} tokens in total (read from the token contract). Your order is ${(d.order_share_of_supply * 100).toFixed(2)}% of them — the issuer can mint more, so this is a size check, not market depth.</p>` : ""}
+        ${d.next_open_ms && d.session !== "regular" ? `<p class="muted">Next trading session opens around ${esc(fmtTime(d.next_open_ms))}.</p>` : ""}
+        ${d.agent_gate ? `<p class="trap" style="background:rgba(49,130,246,.10)"><b>If an AI agent placed this order through Binance Agentic Wallet:</b> StockGuard would answer <b>${esc(d.agent_gate.action)}</b>${d.agent_gate.reasons.length ? " — " + d.agent_gate.reasons.map(esc).join(" · ") : "."}</p>` : ""}
+        <p class="muted">Token contract on BNB Chain: <code>${esc(d.contract)}</code> (${esc(d.issuer || "")}) — check this address in your wallet before buying. Agents: <code>stockguard gate ${esc(d.symbol)} --usd ${usd}</code></p>
+        ${d.attestation_daily ? `<p class="muted">${esc(d.name || d.symbol)} — issuer's <a href="${esc(d.attestation_daily)}" target="_blank" rel="noopener">daily attestation report</a> (proof the tokens are backed by real shares).</p>` : ""}
+      </div>`;
+  } catch (err) {
+    $("out").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
+  }
+});
+</script>
+</body>
+</html>
