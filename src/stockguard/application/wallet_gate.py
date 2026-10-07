@@ -82,14 +82,15 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
     elif auditor is None:
         notes.append("No token audit was run by this caller.")
     if settings is None:
-        notes.append("Wallet limits were not checked — pass the output of `baw wallet settings --json`.")
+        notes.append("Heads-up to show the user: the wallet's own limits were not checked — pass the output of "
+                     "`baw wallet settings --json`.")
     elif today and settings.quota_date and settings.quota_date != today:
         notes.append(f"The wallet settings are from {settings.quota_date}, not today ({today}) — quotaLeft may be "
                      f"stale; read them again.")
     if slippage is None:          # same cap as `trade`: an agent copying these commands never gets "auto"
         slippage = 1.0
-        notes.append('No slippage given: capped at 1% (instead of the wallet\'s "auto" default) — tell the user; '
-                     'pass --slippage to change it.')
+        notes.append('Heads-up to show the user: no slippage given, so it is capped at 1% (instead of the wallet\'s '
+                     '"auto" default); pass --slippage to change it.')
     trigger = None
     action = d.action
     reasons = list(d.reasons)
