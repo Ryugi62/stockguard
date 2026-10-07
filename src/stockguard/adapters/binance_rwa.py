@@ -1,6 +1,7 @@
 """Binance Web3 public RWA endpoints (no API key). Adapter layer: HTTP + retries only, no rules."""
 import json
 import time
+import urllib.error
 import urllib.parse
 import urllib.request
 from typing import Callable, Dict, List, Optional, Sequence
@@ -49,6 +50,11 @@ class RwaClient:
                 return body.get("data")
             except RwaError:
                 raise
+            except urllib.error.HTTPError as e:   # 4xx is our request's fault: retrying won't help (429 = slow down)
+                if 400 <= e.code < 500 and e.code != 429:
+                    raise RwaError(f"{key}: HTTP {e.code} — not retried")
+                last = e
+                self._sleep(self.backoff * (2 ** attempt) * (4 if e.code == 429 else 1))
             except Exception as e:  # network / decode / WAF HTML page
                 last = e
                 self._sleep(self.backoff * (2 ** attempt))

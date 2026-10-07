@@ -51,3 +51,36 @@ def test_mcp_lists_wallet_gate_tool_and_gates_a_swap():
     g = json.loads(out[1]["result"]["content"][0]["text"])
     assert g["action"] == "CONFIRM" and g["approved_usd"] == 40 and g["baw_commands"][1].startswith("baw market-order swap --fromTokenQty 40.00")
     assert out[2]["error"]["code"] == -32602   # usd_amount required
+
+
+def test_http_4xx_is_not_retried_but_429_backs_off_longer():
+    import urllib.error
+    from stockguard.adapters.binance_rwa import RwaClient, RwaError
+    calls, sleeps = [], []
+    def get(url):
+        calls.append(url)
+        raise urllib.error.HTTPError(url, 404, "not found", {}, None)
+    c = RwaClient(http_get=get, sleep=sleeps.append)
+    try:
+        c.market_status()
+        assert False
+    except RwaError as e:
+        assert "404" in str(e) and len(calls) == 1 and sleeps == []
+    def busy(url):
+        raise urllib.error.HTTPError(url, 429, "slow down", {}, None)
+    sleeps.clear()
+    try:
+        RwaClient(http_get=busy, sleep=sleeps.append, backoff=0.5).market_status()
+    except RwaError:
+        pass
+    assert sleeps == [2.0, 4.0, 8.0]
+
+
+def test_mcp_gate_takes_the_wallet_quote():
+    from stockguard.adapters.mapping import to_snapshot
+    from stockguard.adapters.mcp_stdio import _gate
+    from stockguard.application.service import Guard
+    from tests_support import FakeClient
+    bad = {"success": True, "data": {"fromCoinAmount": "100", "toCoinAmount": str(100 / 670.62353 * 0.9 * 10)}}
+    out = _gate(Guard(FakeClient(), to_snapshot), {"ticker": "NFLXon", "usd_amount": 100, "wallet_quote": bad})
+    assert out["action"] == "REFUSE" and out["baw_commands"] == []

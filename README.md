@@ -29,7 +29,7 @@ What the demo shows:
 
 Every command also takes `--offline`, and `STOCKGUARD_OFFLINE=1` does the same.
 
-In a browser, nothing to install: `site/` is the same Python package running in Pyodide on the live public endpoints (build with `python3 scripts/build_site.py --out site`, serve with `python3 -m http.server -d site`). The token audit can't be called from a browser (F18), so that page shows it as unreachable; the CLI calls it.
+**Live, nothing to install: https://ryugi62.github.io/stockguard/** — the same Python package running in your browser (Pyodide) on the live public endpoints; first load takes a few seconds (rebuild: `python3 scripts/build_site.py --out site`). The token audit can't be called from a browser (F18), so that page shows it as unreachable; the CLI calls it.
 
 ## Five ways to use it
 
@@ -108,7 +108,7 @@ Seven of these findings in one command, on the live endpoints: `python3 scripts/
 
 ## Use it from an agent
 
-As a skill: `skills/stockguard-pretrade/SKILL.md` tells an agent that already uses `binance-agentic-wallet` to run the gate instead of building the swap command itself, and what to do for each action.
+As a skill: `skills/stockguard-pretrade/SKILL.md` tells an agent that already uses `binance-agentic-wallet` to run the gate instead of building the swap command itself, and what to do for each action. A real run of an AI agent following it (ASK → the user picks → CONFIRM → stops at the wallet, which isn't signed in here): `docs/agent-run-2026-10-07.md`.
 
 As MCP:
 
@@ -130,7 +130,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 158 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 160 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

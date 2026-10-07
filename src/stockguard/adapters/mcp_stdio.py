@@ -37,7 +37,10 @@ GATE_TOOL = {
             "side": {"type": "string", "enum": ["BUY", "SELL"], "default": "BUY"},
             "pay_with": {"type": "string", "enum": ["USDT", "USDC", "USD1", "U", "BNB"], "default": "USDT"},
             "wallet_settings": {"type": "object", "description": "Output of `baw wallet settings --json` (optional)"},
-            "slippage": {"type": "number", "description": "Percent; omitted = the wallet's \"auto\" (disclosed)"},
+            "slippage": {"type": "number", "description": "Percent; omitted = capped at 1% (not the wallet's \"auto\"), disclosed"},
+            "wallet_quote": {"type": "object", "description": "Output of the emitted `baw market-order quote … --json`: "
+                                                              "re-gates on the wallet's own price before the swap "
+                                                              "(>1% worse: CONFIRM, >5%: REFUSE)"},
             "trigger_share_price": {"type": "number", "description": "Limit order at this price per SHARE; the tool "
                                                                     "returns the per-TOKEN trigger for `baw limit-order`"},
             "pay_price": {"type": "number", "description": "USD price of BNB when pay_with is BNB"},
@@ -57,6 +60,9 @@ def _gate(guard, a, auditor=None):
                     auditor=auditor, slippage=a.get("slippage"), trigger_share_price=a.get("trigger_share_price"),
                     pay_price=a.get("pay_price"), today=time.strftime("%Y-%m-%d", time.gmtime()))
     out["baw_commands"] = commands(out)
+    if a.get("wallet_quote"):
+        from stockguard.application.trade import apply_wallet_quote
+        out = apply_wallet_quote(out, a["wallet_quote"], pay_price=a.get("pay_price"))
     return out
 
 
