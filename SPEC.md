@@ -74,6 +74,24 @@ Purpose: anyone (a judge, the W3W team, the report author) can see seven finding
 - Given one endpoint fails, then that screen shows the error and NO, and the other screens still run.
 - Given an independent stock quote (stock × multiplier ≠ token price), then F1 = NO with a note that it depends on the session.
 
+## UC-8 In-browser build (`site/`, `adapters/browser.py`, `scripts/build_site.py`)
+Purpose: a judge or a non-crypto user opens a URL and gets the same answer as the CLI, with nothing installed. Success: the static page loads the same package in Pyodide, checks NFLX / NFLXon / NFLXx on live data with 0 console errors (checked in Chrome 2026-10-07), and the build is tested.
+- Given `/api/check?ticker=NFLXon&usd=1000` through injected I/O, then status 200 and the same body as the local server (`check_response`).
+- Given the browser can't call the token audit (CORS, F18), then the agent line treats it as unreachable (CONFIRM with the skill's sentence), never as "no risk".
+
+## UC-9 baw units (F17) and wallet-quote re-gate
+- Given a market SELL of 0.149 NFLXon tokens (10 shares each), then `--fromTokenQty 1.49…` (shares); a limit SELL stays in tokens.
+- Given a BUY quote whose `toCoinAmount` is in shares, then it is divided by the multiplier before the price check (no phantom −90%).
+- Given `wallet balance` with `rawBalance`, then the SELL balance check uses `rawBalance` (tokens).
+- Given a re-quote worse than the one the user accepted (PROCEED → CONFIRM), then the user is asked again.
+- Given `gate --quote-json` with a quote 10% worse, then REFUSE and no commands.
+- Given no `--slippage`, then `gate` emits `--slippage 1` (the same cap as `trade`) and says so.
+
+## UC-10 Staleness and data errors (2026-10-07)
+- Given the last K-line candle with volume closed 9 days ago, then BLOCK; 3–7 days, WARN with no premium; Ondo candles (volume always 0) say nothing.
+- Given a multiplier conflict and a token price > 25% off the reference for the multiplier the prices support, then BLOCK even without supply data.
+- Given an Ondo token outside regular hours whose stock price × multiplier is within 5 bp of the token price, then the reference is "not independent".
+
 ## Non-goals
 - No trading strategy, no PnL claims, no perps.
 - No private keys handled by StockGuard (signing stays in the wallet / Agentic Wallet).

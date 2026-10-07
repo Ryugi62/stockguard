@@ -17,6 +17,9 @@ def _gate_block(out, indent="   ", max_reasons=3):
     if out.get("approved_usd") not in (None, out["requested_usd"]) and out["action"] != "REFUSE":
         head += f"  (approved {_usd(out['approved_usd'])} of {_usd(out['requested_usd'])})"
     lines = [head] + [f"{indent}  · {r}" for r in out.get("reasons", [])[:max_reasons]]
+    heads_up = [n.split(": ", 1)[1] for n in out.get("notes", []) if n.startswith("Heads-up to show the user: ")]
+    lines += [f"{indent}  i {n}  (heads-up shown to the user, no extra confirmation)" for n in heads_up[:max_reasons]] \
+        if out["action"] == "PROCEED" else []
     cmds = commands(out)
     lines += [f"{indent}  $ {c}" for c in cmds[:2]] if cmds else [f"{indent}  (no wallet command is emitted)"]
     return lines
@@ -36,6 +39,8 @@ def run_demo(guard: Guard, live: bool = False, out=print, auditor=None) -> None:
         r = rows.get(c["symbol"], {})
         per = f"${r['per_share_price']:,.2f}/share" if r.get("per_share_price") else "no price"
         spread = f" (+{r['per_share_spread'] * 100:.1f}%)" if r.get("per_share_spread") else ""
+        if r.get("stale_price"):
+            spread = f" (last on-chain trade {r['last_trade_age_h'] / 24:.0f} days ago)"
         out(f"   {c['symbol']:<8} {c['issuer']:<20} 1 token = {c['shares_label']:<40} {per}{spread}")
     out("   Same share, three prices. The per-share price also settles NFLXx: $71.30 per token only makes sense as 1 share.")
     out("")

@@ -50,11 +50,21 @@ def _f(x) -> Optional[float]:
         return None
 
 
+def last_trade_age_hours(klines: List, now_s: float) -> Optional[float]:
+    """Hours since the close of the last K-line candle, if the candles are trade-derived (some volume > 0).
+    Ondo candles always carry volume 0 (F7), so they say nothing about the last trade -> None."""
+    rows = [k for k in klines or [] if isinstance(k, (list, tuple)) and len(k) > 6]
+    if not rows or not any((_f(k[5]) or 0) > 0 for k in rows):
+        return None
+    return max(0.0, (now_s * 1000 - float(rows[-1][6])) / 3.6e6)
+
+
 class Guard:
     def __init__(self, client: RwaPort, to_snapshot: ToSnapshot, chain_id: str = "56", list_ttl: float = 600.0,
-                 onchain: Optional[SupplyPort] = None):
+                 onchain: Optional[SupplyPort] = None, clock: Callable[[], float] = time.time):
         self.client, self.to_snapshot, self.chain_id, self.list_ttl = client, to_snapshot, chain_id, list_ttl
         self.onchain = onchain
+        self.clock = clock
         self._tokens: Optional[List[Dict]] = None
         self._tokens_at = 0.0
 
@@ -114,10 +124,14 @@ class Guard:
         for r in rows:   # same share, three prices: the per-share view also shows which multiplier the price supports
             m = r["share_equivalent"] / r["token_qty"] if r.get("token_qty") else r["multiplier"]
             r["per_share_price"] = (r["token_price"] / m) if r.get("token_price") and m else None
-        priced = [r["per_share_price"] for r in rows if r["per_share_price"]]
+        for r in rows:   # a price from a trade days ago is not comparable with live ones (F16)
+            age = r.get("last_trade_age_h")
+            r["stale_price"] = bool(age is not None and age > 72)
+        priced = [r["per_share_price"] for r in rows if r["per_share_price"] and not r["stale_price"]]
         lo = min(priced) if priced else None
         for r in rows:
-            r["per_share_spread"] = (r["per_share_price"] / lo - 1) if lo and r["per_share_price"] else None
+            r["per_share_spread"] = (r["per_share_price"] / lo - 1) if lo and r["per_share_price"] and not r["stale_price"] \
+                else None
         return rows
 
     def snapshot(self, query: str) -> Snapshot:
@@ -139,6 +153,11 @@ class Guard:
                     notes.append(f"{s.symbol}: API circulatingSupply {api:,.4f} != on-chain totalSupply {supply:,.4f}")
             except Exception as e:  # chain read is a bonus; never fail the check on it
                 notes.append(f"{s.symbol}: on-chain read failed ({type(e).__name__})")
+        try:                        # Market API K-line: when did this token last trade on-chain? (F16)
+            kl = self.client.kline(t["contractAddress"], "1d", 10, self.chain_id) if hasattr(self.client, "kline") else []
+            s = dataclasses.replace(s, last_trade_age_h=last_trade_age_hours(kl, self.clock()))
+        except Exception as e:      # a bonus signal; never fail the check on it
+            notes.append(f"{s.symbol}: K-line read failed ({type(e).__name__})")
         return s, notes
 
     def check(self, query: str, side: str = "BUY", token_qty: Optional[float] = None, premium_threshold: float = 0.01,
@@ -227,7 +246,7 @@ def render(s: Snapshot, v: Verdict, side: str, qty: float) -> Dict:
         "token_price": s.token_price, "stock_price": s.stock_price,
         "reference_price": v.reference_price, "premium": v.premium,
         "reference_derived": s.reference_derived,
-        "next_open_ms": s.next_open_ms,
+        "next_open_ms": s.next_open_ms, "last_trade_age_h": s.last_trade_age_h,
         "session": s.session, "status": s.status, "reason": s.reason, "market_session": s.market_session,
         "checked_at": int(time.time()),
     }

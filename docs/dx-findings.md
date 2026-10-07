@@ -1,17 +1,18 @@
 # Raw findings log (evidence for the Developer Experience Report)
 
-This file is a lab notebook: what the public tokenized-securities endpoints returned, with the command to reproduce each observation. It is **not** the DX report. The organizers do not accept AI-generated reports, so the report itself must be written by the team member in their own words from these notes.
+This file is a lab notebook: what the public tokenized-securities endpoints (and the `baw` CLI) returned, with the command to reproduce each observation.
 
 Snapshots: first scan 2026-10-03 ~04:45 UTC, rescan ~05:05 UTC (`data/scan-20261003-weekend.jsonl`) — 458 BSC tokens (chainId 56), Saturday, US market closed. Scan time 7.3–7.4 s, 0 request errors. Counts below are from the rescan unless stated; they move a little between scans.
 Doc references point at the public skill file: https://github.com/binance/binance-skills-hub/blob/main/skills/binance-web3/binance-tokenized-securities-info/SKILL.md (line numbers as of 2026-10-03).
 
 Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (all tokens) · `python3 scripts/reproduce_findings.py` (seven findings, one screen each, live in ~1 s; `--offline` for the recorded responses)
 
-## F1. Weekend "stock price" is the token price divided by the multiplier
+## F1. Outside regular hours, stock price × multiplier = token price (not two independent prices)
 - 432 of 458 tokens (427 in the first scan): `stockInfo.price × tokenInfo.sharesMultiplier == tokenInfo.price` to 1e-6.
 - Example NFLXon (`0x7048f5227b032326cc8dbc53cf3fddd947a2c757`): token 670.62353, stock 67.062353, multiplier 10.
 - The skill doc (SKILL.md L473, Stock Info table) says `stockInfo.price` "May be null outside trading hours". It is not null; it is filled with a value derived from the token itself.
-- Weekday recheck 2026-10-07 (Wednesday, US `overnight` session): NFLXon at 04:42 UTC token 691.625, stock 69.1625, multiplier 10 (derived again); at 04:38 UTC token 691.66842 vs stock 69.165385 (independent). So it is not weekend-only.
+- Weekday recheck 2026-10-07 (Wednesday, US `overnight` session): NFLXon at 04:42 UTC token 691.625 vs stock 69.1625 × 10 (identical); at 04:38 UTC 691.66842 vs 691.65385 (2 bp); at 04:50 UTC 692.1988 vs 692.19761 (0.02 bp). So it is not weekend-only, and outside regular hours the two move together within a few bp.
+- Equal values don't show which side is computed from which. Since Ondo K-line volume is always 0 (F7), the token price may well be computed from the stock quote rather than the other way round. Either way, the two are not independent observations, so no premium can be read from them. StockGuard treats a gap ≤ 5 bp outside regular hours as "not independent".
 - Effect: any premium/discount computed from this API outside US hours is always 0%. A bot cannot see whether it is overpaying on weekends. 8 tokens did return `null` (MAG7Xon, BLKDIGon, BRAINon, BLKHIon, YLD8on, BLKGRWon, YLD5on, and USDY), so client code must handle both.
 - Fixture: `fixtures/dynamic_nflx_weekend.json`.
 
@@ -38,15 +39,16 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (al
 - Of the 31 `offhours` tokens, 18 carry a stock price that is **not** derived from the token price (an independent but stale quote), while the other 440 tokens carry either a derived price (F1) or `null`.
 - A client cannot tell "live", "stale but real" and "derived" apart without re-doing the arithmetic. A `referenceSource: live | last_close | derived` field would remove the guesswork.
 
-## F7. Token K-Line volume is always "0"  (reproduce: `PYTHONPATH=src python3 -m stockguard kline NFLXon --limit 10`, fixture `fixtures/kline_nflx_1d.json`)
+## F7. Ondo K-Line volume is always "0" (xStocks and bStocks candles do carry volume)  (reproduce: `PYTHONPATH=src python3 -m stockguard kline NFLXon --limit 10`, fixture `fixtures/kline_nflx_1d.json`)
 - `dex/market/token/kline/ai?interval=1d&limit=10` for NFLXon, AAPLon, TSLAon, NVDAon, SPYon, QQQon, KLACon, ENLVon, MSTRon, COINon: every one of the 100 daily candles has volume `"0"`, while open/high/low/close move.
-- Either the field is not populated for RWA tokens or the candles are not trade-derived. In both cases a client cannot use this endpoint to judge on-chain liquidity, which is exactly what a pre-trade check needs.
+- Not so for the other issuers: NFLXx and NFLXB daily candles carry volume (NFLXB 324,468.95 on 2026-10-06; NFLXx 408.98 on 2026-09-28), checked 2026-10-07, screen 6 of `scripts/reproduce_findings.py`.
+- So for Ondo either the field is not populated or the candles are not trade-derived. In both cases a client cannot use this endpoint to judge on-chain liquidity, which is exactly what a pre-trade check needs.
 
 ## F8. On-chain supply matches the API (a positive check)
 - `totalSupply()` read directly from the NFLXon contract over public BSC RPC = 220.9909 tokens, equal to the API `circulatingSupply`. Total value on BNB Chain ≈ $148k, so a $20k order is ~13% of every NFLXon token in existence — StockGuard shows that as a size note. Supply is not depth (Ondo mints on demand), so price impact still needs a trade quote (Trading API — key required).
 
 ## F9. xStocks and bStocks say "TRADING" with no market status on a Sunday  (scan 2026-10-04 04:45 UTC, `data/scan-20261004-all-issuers.jsonl`)
-- Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (all tokens) · `python3 scripts/reproduce_findings.py` (seven findings, one screen each, live in ~1 s; `--offline` for the recorded responses) (lists `type=1,2,3`), then count `session == ""` per `issuer`.
+- Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (lists `type=1,2,3`), then count `session == ""` per `issuer`; or screen 2 of `python3 scripts/reproduce_findings.py`.
 - 130/130 xStocks and 87/87 bStocks: `statusInfo.marketStatus: null`, `reasonCode: "TRADING"`, `nextOpenTime: null`. Same moment, Ondo: 426 `closed` + 31 `offhours` + 1 `regular`, and the market-wide endpoint said `closed / "Weekend or Holiday"`.
 - Fixtures: `fixtures/dynamic_nflxx_weekend.json`, `fixtures/dynamic_nflxb_weekend.json`.
 - Effect: one API, three issuers, three different answers to "is this tradeable now". A client written against Ondo responses treats every xStock/bStock as open 24/7.
@@ -80,9 +82,22 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (al
 - `--json` is a global option: it is not listed in each subcommand's `--help` (`baw market-order swap --help`), only in `baw --help`. The skill says to "Always append `--json`", and it works after the subcommand.
 - Without signing in, `wallet status` answers `{"success": true, "data": {"status": "UNCONNECTED"}}`, but `market-order quote` fails with `NOT_LOGGED_IN` (code 10003000). So a read-only price quote needs a signed-in wallet. Raw output: `fixtures/baw/`.
 
-## F16. NFLXx token price frozen for three days, with nothing marking it stale
-- `dynamic/ai` for NFLXx (`0xa6a65ac27e76cd53cb790473e4345c46e5ebf961`) returned `tokenInfo.price: "71.302720129194506196863678605096598194"` on 2026-10-04 04:54 UTC (Sunday, `fixtures/dynamic_nflxx_weekend.json`) and the identical string on 2026-10-07 04:42 UTC (Wednesday). In the same window `stockInfo.price` moved 67.06 → 69.16 and NFLXB's token price moved 67.71 → 69.24.
-- The payload has no timestamp or source field for the token price, so a client can't tell a live price from one that stopped updating. Reproduce: `python3 scripts/reproduce_findings.py` (screen 1, line `tokenInfo.price unchanged since recording`).
+## F16. NFLXx's token price is a nine-day-old trade, and only the K-line says so
+- `dynamic/ai` for NFLXx (`0xa6a65ac27e76cd53cb790473e4345c46e5ebf961`) returned `tokenInfo.price: "71.302720129194506196863678605096598194"` on 2026-10-04 04:54 UTC (Sunday, `fixtures/dynamic_nflxx_weekend.json`) and the identical string on 2026-10-07 04:42 UTC (Wednesday), while `stockInfo.price` moved 67.06 → 69.16 and NFLXB's token price moved 67.71 → 69.24.
+- The NFLXx K-line explains it: its last candle with volume is 2026-09-28 (close 71.3027, volume 408.98). The token price is the last trade of a thin pool, not a frozen feed. But `dynamic/ai` carries no timestamp or source for the token price, so a client has to call a second endpoint to learn that the price is nine days old. `compare` used to show it as a +3.1% per-share premium; StockGuard now reads the K-line and, for a last trade older than 3 days, computes no premium (WARN); older than 7 days, it BLOCKs.
+- Reproduce: screen 1 of `python3 scripts/reproduce_findings.py` (lines `last K-line candle with volume` and `tokenInfo.price == that close`).
+
+## F17. `baw` 1.10.0 reads tokenized-stock amounts as shares, the skill says "human-readable units"
+- Read from the published package (`npm pack @binance/agentic-wallet@1.10.0`, shasum `606a357a41638c72beb40c56cb5acee8efa0f275` = the registry's `dist.shasum`; `dist/index.js`, read, not run). For a token in its RWA list (`…/rwa/stock/scaleui/list`; its multipliers equal `list/ai` for all 675 BSC stock tokens, checked 2026-10-07):
+  - `market-order quote|swap` SELL: `--fromTokenQty` is a **share** amount; the CLI divides by the multiplier before sending (`Wt`, `Wn`), capped at the balance.
+  - `market-order quote` BUY: `toCoinAmount` comes back in shares (`toTokenShare`, or `toCoinAmount` × multiplier).
+  - `wallet balance`: `balance` and `price` are per share; the token amounts are in `rawBalance` / `rawPrice`.
+  - `limit-order buy|sell` create: amount and `--triggerPrice` are sent as given (token units, per-token price), but `limit-order list` shows them per share.
+  - The RWA list only maps `type` 1 → ondo and 3 → bstock; xStocks (type 2) are `kind: "unknown"`.
+- The skill (`references/market-order.md`) only says amounts are in "human-readable units". On NFLXon (10 shares per token), a SELL sized in tokens sells a tenth of what was meant; on ENLVon (0.0667) it sells 15× more, up to the whole balance. StockGuard's earlier build made exactly this mistake (caught by a mock judge reading the bundle) and now sends SELL amounts in shares, reads balances from `rawBalance`, and converts quotes back to token units (tests: `tests/test_trade.py`, `tests/test_wallet_gate.py`).
+
+## F18. The token audit API can't be called from a browser
+- `OPTIONS …/security/token/audit` answers `access-control-allow-origin: *` but no `Access-Control-Allow-Headers`, so under the CORS rules a browser won't send the `Content-Type: application/json` POST; a `text/plain` body (no preflight) is answered `{"code":"000002","message":"illegal parameter"}` (checked 2026-10-07). The RWA Data endpoints and the BSC RPC node do allow browser calls. So a web wallet front-end can't run the audit the wallet skill requires before every swap. The in-browser build of StockGuard (`site/`) therefore shows the audit as unreachable.
 
 ## Latency (2026-10-04 04:43 UTC, n=10 per endpoint, `PYTHONPATH=src python3 scripts/latency.py`, raw `data/latency-20261004.json`)
 - p50 74–111 ms, p95 130–189 ms, max 424 ms (list type=2). The `list` call is the slowest. A full 675-token scan takes 13.8 s with 8 workers.
@@ -91,7 +106,7 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (al
 - Swap syntax and the "orderId is not a completed swap — poll" rule: `references/market-order.md`. Wallet policy fields: `references/wallet-setting.md`. Fail-closed / no address hallucination / ask the provider: `SKILL.md`.
 - Things that slowed us down (raw, for the report): the token-audit pre-check (`references/security.md`) depends on a separate skill (`query-token-audit`), and it has no data for stock tokens (F14). `limit-order --triggerPrice` is a per-token USD price, so on a multiplier-10 token a per-share target is off by 10×. The skill tells agents to "Determine support at runtime" for limit orders, and quotes an `Ondo-related tokens cannot be traded` error. Wallet settings "can only be changed in the Binance App", so an agent can read the limits but never set them.
 
-Reading guide for the report: F1, F2, F6 and F12 are one theme — **how far can a client trust the reference price**. F9, F10, F11 and F13 are a second one — **the same API means different things per issuer**. Both lead to the redesign questions in `docs/dx-report-TEMPLATE.md`.
+Reading guide for the report: F1, F2, F6 and F12 are one theme — **how far can a client trust the reference price**. F9, F10, F11 and F13 are a second one — **the same API means different things per issuer**. Both lead to the redesign questions in the report.
 
 ## Still to write from first-hand use (the human report must cover these)
 - Onboarding time from opening the docs to the first successful call, and where it stalled.
@@ -101,5 +116,4 @@ Reading guide for the report: F1, F2, F6 and F12 are one theme — **how far can
 
 ## Not yet verified (needs a weekday session and/or an API key)
 - Behaviour during an actual `ASSET_PAUSED` (dividend/split) or `ASSET_LIMITED` (earnings) window.
-- Whether the derived-price behaviour (F1) also appears during `overnight` on weekdays.
 - Order placement through the Agentic Wallet / Binance Web3 APIs (requires sign-in and funds).

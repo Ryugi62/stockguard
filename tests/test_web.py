@@ -45,3 +45,9 @@ def test_ambiguous_ticker_returns_choices():
         assert b"NFLXB" in urllib.request.urlopen(base + "/api/tickers").read()
     finally:
         srv.shutdown()
+
+
+def test_check_response_non_numeric_amount_is_plain_english():
+    from stockguard.adapters.web import check_response
+    code, body = check_response(Guard(FakeClient(), to_snapshot), {"ticker": "NFLXon", "usd": "abc"})
+    assert code == 400 and "number" in body["error"] and "float" not in body["error"]

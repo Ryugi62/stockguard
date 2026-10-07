@@ -162,3 +162,36 @@ def test_price_far_off_reference_in_either_direction_is_a_data_error_block():
 def test_empty_session_while_market_closed_says_closed_and_no_session():
     v = check_trade(snap(session="", status="TRADING", market_session="closed"), "BUY", 1)
     assert any("closed" in r for r in v.reasons) and any("no market session" in r for r in v.reasons) and v.risk == 25
+
+
+# --- R7 (2026-10-07 quant judge): stale last trade, data-error check under a multiplier conflict -------------------
+def _snap(**kw):
+    from stockguard.domain.guard import Snapshot
+    base = dict(symbol="NFLXx", ticker="NFLX", token_price=71.30, stock_price=69.16, multiplier=1.0,
+                session="regular", status="TRADING", market_session="regular")
+    base.update(kw)
+    return Snapshot(**base)
+
+
+def test_no_trade_for_over_a_week_blocks():
+    from stockguard.domain.guard import BLOCK, check_trade
+    v = check_trade(_snap(last_trade_age_h=216.0), "BUY", 1.0)
+    assert v.level == BLOCK and any("9 days" in r for r in v.reasons)
+
+
+def test_last_trade_three_to_seven_days_old_warns_and_hides_the_premium():
+    from stockguard.domain.guard import WARN, check_trade
+    v = check_trade(_snap(last_trade_age_h=100.0), "BUY", 1.0)
+    assert v.level == WARN and v.premium is None and not any("above the reference" in r for r in v.reasons)
+
+
+def test_unknown_or_recent_last_trade_changes_nothing():
+    from stockguard.domain.guard import check_trade
+    assert check_trade(_snap(last_trade_age_h=None), "BUY", 1.0).level == check_trade(_snap(last_trade_age_h=5.0), "BUY", 1.0).level
+
+
+def test_price_far_off_reference_blocks_even_with_a_multiplier_conflict():
+    from stockguard.domain.guard import BLOCK, check_trade
+    # ABBVx-like: token $2,064.50, stock $267, list multiplier 1 vs feed 0.5, supply unknown (RPC down)
+    v = check_trade(_snap(symbol="ABBVx", token_price=2064.50, stock_price=267.0, multiplier=0.5, list_multiplier=1.0), "BUY", 1.0)
+    assert v.level == BLOCK and any("data error" in r for r in v.reasons)

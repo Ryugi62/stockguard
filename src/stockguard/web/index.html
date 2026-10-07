@@ -51,11 +51,20 @@
     <button>Check</button>
   </form>
   <div id="out"></div>
+  <p id="mode" class="muted"></p>
   <p class="muted">Data: Binance Web3 public tokenized-securities endpoints (BNB Chain). Not investment advice; StockGuard never touches your keys.</p>
 </main>
 <script>
 const $ = (id) => document.getElementById(id);
 const money = (x) => x == null ? "—" : "$" + Number(x).toLocaleString("en-US", {maximumFractionDigits: 2});
+const shareText = (d) => {   // on a multiplier conflict show both counts, unless the prices settle it to one
+  const b = Number(d.share_equivalent.toPrecision(4));
+  if (!d.multiplier_conflict) return b;
+  const a = Number((d.token_qty * d.list_multiplier).toPrecision(4)), c = Number((d.token_qty * d.multiplier).toPrecision(4));
+  const other = a === b ? c : a;
+  return other === b ? b : `${b} (or ${other})`;
+};
+const api = window.stockguardApi || ((u) => fetch(u));   // static build: Pyodide (site_src/boot.js)
 const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 const HEAD = { ALLOW: "Looks fine to trade now", WARN: "You can trade, but read this first", BLOCK: "Don't trade this right now" };
 const SESSION = { regular: "US market is open", premarket: "US pre-market (thin trading)", postmarket: "US after-hours (thin trading)",
@@ -67,7 +76,7 @@ const fmtTime = (ms) => {
   const local = d.toLocaleString(undefined, {weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short"});
   return `${et} New York time (${local} for you)`;
 };
-fetch("/api/tickers").then((r) => r.json()).then((xs) => {
+api("/api/tickers").then((r) => r.json()).then((xs) => {
   $("tickers").innerHTML = xs.map((x) => `<option value="${esc(x)}">`).join("");
 }).catch(() => {});
 $("f").addEventListener("submit", async (e) => {
@@ -76,7 +85,7 @@ $("f").addEventListener("submit", async (e) => {
   $("out").innerHTML = '<div class="card">Checking…</div>';
   try {
     const usd = Number($("usd").value) || 100;
-    const r = await fetch(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&usd=${usd}`);
+    const r = await api(`/api/check?ticker=${encodeURIComponent(t)}&side=${$("s").value}&usd=${usd}`);
     const d = await r.json();
     if (r.status === 409 && d.choices) {
       $("out").innerHTML = `<div class="card"><div class="verdict">${esc(t.toUpperCase())} is ${d.choices.length} different tokens</div>
@@ -95,7 +104,7 @@ $("f").addEventListener("submit", async (e) => {
         <ul>${d.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
         ${(d.notes || []).map((x) => `<p class="muted">ℹ︎ ${esc(x)}</p>`).join("")}
         <div class="facts">
-          <div class="fact"><b>${money(usd)} ≈ ${Number(d.token_qty.toPrecision(4))} tokens = ${d.multiplier_conflict ? `${Number((d.token_qty * d.list_multiplier).toPrecision(4))} or ${Number(d.share_equivalent.toPrecision(4))}` : Number(d.share_equivalent.toPrecision(4))} ${esc(d.ticker)} shares</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"}</span></div>
+          <div class="fact"><b>${money(usd)} ≈ ${Number(d.token_qty.toPrecision(4))} tokens = ${shareText(d)} ${esc(d.ticker)} shares</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"}</span></div>
           <div class="fact"><b>${money(d.token_price)}</b><span>per token (${perShare == null ? "per-share price unclear" : money(perShare) + " per share"}${d.reference_derived ? ", derived from the token price" : ""})</span></div>
           <div class="fact"><b>${esc(SESSION[d.session] || d.session || (d.status === "TRADING" ? "Says trading — no session reported" : "Not reported"))}</b><span>right now</span></div>
           <div class="fact"><b>${d.premium == null ? "Can't tell" : (d.premium * 100).toFixed(2) + "%"}</b><span>${d.premium == null ? "no independent stock price to compare with right now" : "token price vs. the real stock price"}</span></div>

@@ -57,3 +57,13 @@ def test_repo_root_one_command(tmp_path):
                        cwd=str(tmp_path), env={**os.environ, "PYTHONPATH": ""})
     assert p.returncode == 0, p.stderr
     assert "StockGuard demo" in p.stdout and "baw market-order" in p.stdout
+
+
+def test_demo_proceed_shows_heads_up_notes_for_closed_market():
+    lines = []
+    from stockguard.infrastructure.cli import build_auditor, build_guard
+    from stockguard.infrastructure.demo import run_demo
+    run_demo(build_guard(offline=True), out=lines.append, auditor=build_auditor(offline=True))
+    text = "\n".join(lines)
+    step5 = text[text.index("5) "):text.index("6) ")]
+    assert "PROCEED" in step5 and "US market is closed" in step5

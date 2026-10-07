@@ -26,7 +26,15 @@ Act on `action`:
 | `REFUSE` | Do not trade. Tell the user every line of `reasons`. |
 | `ASK` | The ticker is several tokens (`choices`, with shares per token). Ask the user which one. Never pick for them. |
 | `CONFIRM` | Show `reasons` (and `notes` starting with "Heads-up"), wait for an explicit "yes". This replaces the separate audit acknowledgment. |
-| `PROCEED` | Normal binance-agentic-wallet confirmation, then run `baw_commands` in order. |
+| `PROCEED` | Show the `notes` that start with "Heads-up", do the normal binance-agentic-wallet confirmation, then run `baw_commands` in order. |
+
+The exit status says the same without parsing JSON: `0` PROCEED · `10` CONFIRM · `11` ASK · `12` REFUSE (`1` = error, e.g. market data unavailable → treat as REFUSE).
+
+Run `baw_commands` exactly as given — don't recompute the amounts: for tokenized stocks `baw` 1.10.0 reads a market-order SELL `--fromTokenQty` as **shares** and the gate has already converted it (limit orders stay in token units). After the quote command, save its output and re-gate on it before the swap:
+
+```bash
+stockguard gate <SYMBOL> --usd <amount> … --quote-json /tmp/quote.json   # >1% worse: CONFIRM · >5% worse: REFUSE
+```
 
 Then run `baw_commands` exactly as given: quote → swap → poll `market-order list --orderId` until `FINISHED`/`FAILED`
 (or the limit order, then `limit-order list --strategyId`). If a limit order is rejected, stop — never fall back to a

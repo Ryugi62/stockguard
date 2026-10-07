@@ -25,14 +25,58 @@ class WalletPort(Protocol):
     def cli_ok(self, required: str = ...) -> Optional[bool]: ...
 
 
+def _quote_in_tokens_and_usd(gate, frm, to, pay_price):
+    """baw 1.10.0 quotes tokenized stocks in SHARES (BUY toCoinAmount, SELL fromCoinAmount) — convert back to token
+    units with the multiplier baw applies; a BNB leg is converted to dollars."""
+    m = gate.get("wallet_multiplier") or 1.0
+    if gate["side"] == "BUY":
+        to = to / m
+    else:
+        frm = frm / m
+    if gate["pay_with"] == "BNB":
+        if gate["side"] == "BUY":
+            frm = frm * (pay_price or 0)
+        else:
+            to = to * (pay_price or 0)
+    return frm, to
+
+
+def apply_wallet_quote(gate: Dict, raw_quote: Dict, pay_price: Optional[float] = None) -> Dict:
+    """`gate --quote-json`: the same wallet-quote check `trade` runs, for an agent that runs the commands itself.
+    > 5% worse -> REFUSE (no commands); > 1% worse -> at least CONFIRM."""
+    from stockguard.adapters.agentic_wallet import parse_quote      # parsing only; no wallet call here
+    out = dict(gate, reasons=list(gate.get("reasons", [])), notes=list(gate.get("notes", [])))
+    if out["action"] in (REFUSE, ASK):
+        return out
+    try:
+        frm, to = parse_quote(raw_quote)
+    except (KeyError, TypeError, ValueError) as e:
+        out.update(action=REFUSE, baw_commands=[], approved_usd=0.0)
+        out["reasons"].append(f"The wallet quote can't be read ({e}) — get a fresh one before swapping")
+        return out
+    frm, to = _quote_in_tokens_and_usd(out, frm, to, pay_price)
+    q = check_quote(out["side"], frm, to, out["token_price"])
+    out["quote_check"] = {"level": q.level, "reason": q.reason, "from": frm, "to": to}
+    if q.level == REFUSE:
+        out.update(action=REFUSE, baw_commands=[], approved_usd=0.0)
+        out["reasons"].append(q.reason)
+    elif q.level == "CONFIRM":
+        out["action"] = "CONFIRM"
+        out["confirmation_required"] = True
+        out["reasons"].append(q.reason)
+    return out
+
+
 def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount: float, side: str = "BUY",
                       pay_with: str = "USDT", slippage: Optional[float] = None, auditor=None,
                       token_qty: Optional[float] = None,
                       trigger_share_price: Optional[float] = None, confirm: Callable[[Dict], bool] = lambda s: False,
                       sleep: Optional[Callable[[float], None]] = None, today: Optional[str] = None,
+                      clock: Optional[Callable[[], float]] = None,
                       max_polls: int = 30) -> Dict:
     import time as _time
     sleep = sleep or _time.sleep
+    clock = clock or _time.time
     st = wallet.status()
     if st != "CONNECTED":
         if st and "BAW_NOT_FOUND" in str(st):
@@ -82,28 +126,29 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
         gate["baw_commands"] = wallet.commands(gate)
     try:
         frm, to = wallet.quote(gate)
-        quoted_at = _time.time()
+        quoted_at = clock()
     except (KeyError, TypeError, ValueError) as e:
         return {"stage": "quote", "gate": gate, "result": f"No usable quote from the wallet — {e}"}
-    if gate["pay_with"] == "BNB":              # the quote is in BNB; compare in dollars
-        if gate["side"] == "BUY":
-            frm = frm * (pay_price or 0)
-        else:
-            to = to * (pay_price or 0)
+    frm, to = _quote_in_tokens_and_usd(gate, frm, to, pay_price)
     q = check_quote(gate["side"], frm, to, gate["token_price"])
     summary = {"gate": gate, "quote": {"from": frm, "to": to, "check": q.level, "reason": q.reason}}
     if q.level == REFUSE:
         return {"stage": "quote", **summary, "result": q.reason}
     if not confirm(summary):
         return {"stage": "confirm", **summary, "result": "Not confirmed — nothing was placed"}
-    if _time.time() - quoted_at > 30:      # the user took a while: re-quote before swapping
+    if clock() - quoted_at > 30:      # the user took a while: re-quote before swapping
         try:
             frm2, to2 = wallet.quote(gate)
         except (KeyError, TypeError, ValueError) as e:
             return {"stage": "quote", **summary, "result": f"Re-quote failed — {e}"}
+        frm2, to2 = _quote_in_tokens_and_usd(gate, frm2, to2, pay_price)
         q2 = check_quote(gate["side"], frm2, to2, gate["token_price"])
         if q2.level == REFUSE:
             return {"stage": "quote", **summary, "result": "The price moved after confirmation: " + q2.reason}
+        if q2.level != q.level and not confirm({**summary, "quote": {"from": frm2, "to": to2, "check": q2.level,
+                                                                      "reason": q2.reason}}):
+            return {"stage": "confirm", **summary, "result": "The re-quote is worse than the one you accepted, and it "
+                                                             "was not confirmed again — nothing was placed"}
     try:
         oid = wallet.swap(gate)
     except ValueError as e:

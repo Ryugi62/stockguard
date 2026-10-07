@@ -79,8 +79,8 @@ def test_gate_limit_order_emits_per_token_trigger_and_no_fallback():
 def test_slippage_is_passed_or_disclosed():
     out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, slippage=1.0)
     assert "--slippage 1" in commands(out)[1]
-    out2 = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0)
-    assert any('slippage "auto"' in n for n in out2["notes"])
+    out2 = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0)    # default: capped at 1%, disclosed
+    assert "--slippage 1" in commands(out2)[1] and any('instead of the wallet\'s "auto"' in n for n in out2["notes"])
 
 
 def test_pay_with_bnb_uses_native_address_and_converts_dollars_to_bnb():
@@ -131,7 +131,8 @@ def test_available_audit_carries_the_skills_disclaimer():
 
 def test_sell_can_be_sized_in_tokens():
     out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", None, side="SELL", token_qty=0.25)
-    assert abs(out["approved_token_qty"] - 0.25) < 1e-12 and "--fromTokenQty 0.250000" in commands(out)[1]
+    # 0.25 tokens of a 10-share token = 2.5 shares, the unit baw 1.10.0 expects for a market SELL (F17)
+    assert abs(out["approved_token_qty"] - 0.25) < 1e-12 and "--fromTokenQty 2.500000" in commands(out)[1]
 
 
 def test_limit_follow_up_uses_strategy_id():

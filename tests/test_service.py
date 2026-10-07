@@ -55,3 +55,32 @@ def test_onchain_supply_feeds_large_order_note_and_mismatch_note():
     r = g.check("NFLX", "BUY", 5)
     assert r["onchain_supply"] == 100.0 and any("Large order" in x for x in r["notes"])
     assert any("circulatingSupply" in n for n in r["data_notes"])   # fixture says ~220.99
+
+
+def test_last_trade_age_comes_from_trade_derived_kline_candles():
+    from stockguard.adapters.mapping import to_snapshot
+    from stockguard.application.service import Guard, last_trade_age_hours
+    now_ms = 1791349200000                                  # 2026-10-07 04:20 UTC
+    old = [[1790553600000, "77", "77", "71", "71.30", "408.97", 1790639999999]]   # 2026-09-28 candle with volume
+    assert abs(last_trade_age_hours(old, now_ms / 1000) - (now_ms - 1790639999999) / 3.6e6) < 1e-6
+    assert last_trade_age_hours([[1, "1", "1", "1", "1", "0", 2]], now_ms / 1000) is None    # Ondo: volume always 0
+    assert last_trade_age_hours([], now_ms / 1000) is None
+    class NoKline(FakeClient):
+        def kline(self, *a, **k):
+            raise OSError("down")
+    s = Guard(NoKline(), to_snapshot).snapshot("NFLXon")
+    assert s.last_trade_age_h is None                       # a failed K-line read never fails the check
+
+
+def test_compare_leaves_a_stale_price_out_of_the_spread():
+    from stockguard.adapters.mapping import to_snapshot
+    from stockguard.application.service import Guard
+    from test_issuers import ThreeIssuers
+    class Stale(ThreeIssuers):
+        def kline(self, address, interval="1d", limit=10, chain_id="56"):
+            if address.lower() == "0xa6a65ac27e76cd53cb790473e4345c46e5ebf961":     # NFLXx: last trade 9 days ago
+                return [[0, "1", "1", "1", "71.3", "409", 1790639999999]]
+            return []
+    rows = Guard(Stale(), to_snapshot, clock=lambda: 1791349200.0).compare("NFLX")
+    x = [r for r in rows if r["symbol"] == "NFLXx"][0]
+    assert x["stale_price"] is True and x["per_share_spread"] is None and x["verdict"] == "BLOCK"

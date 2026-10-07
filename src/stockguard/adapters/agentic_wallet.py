@@ -51,17 +51,27 @@ def _floor(x: float, places: int = 6) -> str:
 
 
 def _price(x: float) -> str:
-    """Trigger prices keep 6 significant digits (ENLVon trades at $0.0265 per token)."""
-    return f"{x:.2f}" if x >= 1 else f"{float(f'{x:.6g}'):.10f}".rstrip("0")
+    """Trigger prices keep 6 significant digits, and at least 2 decimals (ENLVon $0.024667, KLACon $10.0261)."""
+    digits = f"{float(f'{x:.6g}'):.10f}".rstrip("0")
+    whole, _, frac = digits.partition(".")
+    return f"{whole}.{frac.ljust(2, '0')}"
 
 
-def _args(gate: Dict) -> str:
+def sell_shares(gate: Dict) -> float:
+    """What `baw market-order quote|swap` expects for a tokenized-stock SELL: SHARES, not tokens.
+    baw 1.10.0 divides the given amount by the token's multiplier before sending it (dist/index.js `Wt`/`Wn`);
+    limit orders are sent as given (token units). See docs/dx-findings.md F17."""
+    return gate["approved_token_qty"] * (gate.get("wallet_multiplier") or 1.0)
+
+
+def _args(gate: Dict, limit: bool = False) -> str:
     pay = BSC_STABLES[gate.get("pay_with", "USDT")]
     if gate["side"] == "BUY":
         qty = _floor(gate["pay_qty"], 6) if gate.get("pay_with") == "BNB" else f"{gate['approved_usd']:.2f}"
         src, dst = pay, gate["contract"]
     else:
-        qty, src, dst = _floor(gate["approved_token_qty"]), gate["contract"], pay
+        qty = _floor(gate["approved_token_qty"] if limit else sell_shares(gate))
+        src, dst = gate["contract"], pay
     return f"--fromTokenQty {qty} --fromToken {src} --toToken {dst} --binanceChainId 56"
 
 
@@ -76,6 +86,7 @@ def commands(gate: Dict) -> List[str]:
     a = _args(gate)
     if gate.get("trigger_token_price"):
         side = "buy" if gate["side"] == "BUY" else "sell"
+        a = _args(gate, limit=True)
         return [f"baw limit-order {side} --triggerPrice {_price(gate['trigger_token_price'])} {a}{_slip(gate)} --json",
                 "baw limit-order list --strategyId <strategyId from the order> --json   # placed is not filled; if it was "
                 "rejected, stop and ask — never a market order"]
@@ -142,8 +153,11 @@ class AgenticWallet:
         return float(rows[0]["price"]) if rows else None
 
     def balance(self, contract):
+        """Token units. For tokenized stocks baw reports `balance` in shares and the token amount as `rawBalance`."""
         rows = self._data(self.baw(f"baw wallet balance --tokenAddress {contract} --binanceChainId 56 --json")) or []
-        return float(rows[0]["balance"]) if rows else 0.0
+        if not rows:
+            return 0.0
+        return float(rows[0].get("rawBalance") or rows[0]["balance"])
 
     def pay_balance(self, symbol):
         """None when the wallet doesn't answer (the swap will then fail on its own)."""

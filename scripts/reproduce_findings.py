@@ -4,8 +4,8 @@
     python3 scripts/reproduce_findings.py --offline  # recorded real responses (fixtures/)
 
 Each screen prints the exact request, the raw fields that matter, what we expected, and whether the
-finding reproduces right now. F1 depends on the market session; the screen says so instead of
-pretending. Standard library only.
+finding reproduces right now. F1 is session-dependent (6 findings reproduce every time, F1 outside
+regular hours); the screen says so instead of pretending. Standard library only.
 """
 import argparse
 import json
@@ -41,7 +41,12 @@ def _f(x) -> Optional[float]:
 
 # --- checks: pure functions over the `data` part of each response ---------------------------------
 
-def check_f10(list_data: List[Dict], dynamic: Dict, address: str, recorded_dynamic: Optional[Dict] = None) -> Dict:
+def _day(ms) -> str:
+    return time.strftime("%Y-%m-%d", time.gmtime(float(ms) / 1000))
+
+
+def check_f10(list_data: List[Dict], dynamic: Dict, address: str, recorded_dynamic: Optional[Dict] = None,
+              klines: Optional[List] = None) -> Dict:
     row = next((x for x in list_data if str(x.get("contractAddress", "")).lower() == address and str(x.get("chainId")) == "56"), {})
     lm, dm = row.get("multiplier"), (dynamic.get("tokenInfo") or {}).get("sharesMultiplier")
     a, b = _f(lm), _f(dm)
@@ -49,6 +54,12 @@ def check_f10(list_data: List[Dict], dynamic: Dict, address: str, recorded_dynam
            "tokenInfo.price": (dynamic.get("tokenInfo") or {}).get("price"), "stockInfo.price": (dynamic.get("stockInfo") or {}).get("price")}
     if recorded_dynamic is not None:
         obs["tokenInfo.price unchanged since recording"] = obs["tokenInfo.price"] == (recorded_dynamic.get("tokenInfo") or {}).get("price")
+    traded = [k for k in klines or [] if isinstance(k, list) and len(k) > 6 and (_f(k[5]) or 0) > 0]
+    if traded:      # F16: the token price is the last trade's close, and only the K-line says when that was
+        last = traded[-1]
+        obs["last K-line candle with volume"] = f"{_day(last[0])} close {float(last[4]):.4f} volume {float(last[5]):.2f}"
+        tp = _f(obs["tokenInfo.price"])
+        obs["tokenInfo.price == that close"] = bool(tp and abs(float(last[4]) / tp - 1) < 1e-9)
     return {"observed": obs, "expected": "the same multiplier from the list and the price feed",
             "reproduced": bool(a and b and abs(a - b) / max(a, b) > 0.01)}
 
@@ -70,12 +81,15 @@ def check_f12(dyn_bstock: Dict) -> Dict:
 def check_f1(dyn_ondo: Dict) -> Dict:
     t, s, m = _f((dyn_ondo.get("tokenInfo") or {}).get("price")), _f((dyn_ondo.get("stockInfo") or {}).get("price")), \
         _f((dyn_ondo.get("tokenInfo") or {}).get("sharesMultiplier"))
-    derived = bool(t and s and m and abs(s * m - t) / t < 1e-6)
+    session = (dyn_ondo.get("statusInfo") or {}).get("marketStatus")
+    gap_bp = abs(s * m / t - 1) * 1e4 if (t and s and m) else None
+    near_copy = gap_bp is not None and session != "regular" and gap_bp <= 5
     return {"observed": {"tokenInfo.price": t, "stockInfo.price": s, "sharesMultiplier": m,
-                         "stockInfo.price x multiplier == tokenInfo.price": derived,
-                         "statusInfo.marketStatus": (dyn_ondo.get("statusInfo") or {}).get("marketStatus")},
-            "expected": "stockInfo.price null or a real quote outside trading hours (SKILL.md L473)",
-            "reproduced": derived, "note": "depends on the session: seen on weekends (432/458 tokens) and overnight 2026-10-07; NO = an independent quote right now"}
+                         "gap between stockInfo.price x multiplier and tokenInfo.price (bp)": None if gap_bp is None else round(gap_bp, 3),
+                         "statusInfo.marketStatus": session},
+            "expected": "outside regular hours: stockInfo.price null or an independent quote (SKILL.md L473), not the token price within 5 bp",
+            "reproduced": near_copy,
+            "note": "session-dependent: exact on weekends (432/458 tokens), within 2 bp overnight 2026-10-07; NO = independent right now"}
 
 
 def check_f2(market: Dict) -> Dict:
@@ -86,11 +100,14 @@ def check_f2(market: Dict) -> Dict:
             "reproduced": has_obj or (ms is not None and ms not in DOCUMENTED_SESSIONS)}
 
 
-def check_f7(klines: List) -> Dict:
+def check_f7(klines: List, others: Optional[Dict[str, List]] = None) -> Dict:
     vols = [str(k[5]) for k in klines if isinstance(k, list) and len(k) > 5]
     zero = sum(1 for v in vols if _f(v) == 0)
-    return {"observed": {"candles": len(vols), "candles with volume 0": zero, "close prices move": len({k[4] for k in klines}) > 1},
-            "expected": "some volume on candles whose price moves", "reproduced": bool(vols) and zero == len(vols)}
+    obs = {"NFLXon candles": len(vols), "NFLXon candles with volume 0": zero, "NFLXon close prices move": len({k[4] for k in klines}) > 1}
+    for sym, ks in (others or {}).items():   # xStocks/bStocks candles do carry volume: the gap is Ondo-specific
+        obs[f"{sym} candles with volume > 0"] = sum(1 for k in ks if isinstance(k, list) and len(k) > 5 and (_f(k[5]) or 0) > 0)
+    return {"observed": obs, "expected": "some volume on Ondo candles whose price moves, as xStocks/bStocks candles have",
+            "reproduced": bool(vols) and zero == len(vols)}
 
 
 def check_f14(audit: Dict) -> Dict:
@@ -134,7 +151,7 @@ class OfflineSource:
         return _fx("market_status_weekend.json")["data"]
 
     def kline(self, address: str) -> List:
-        return _fx("kline_nflx_1d.json")["data"]["klineInfos"]
+        return _fx("kline_nflx_1d.json")["data"]["klineInfos"] if address == NFLXON else []   # only Ondo was recorded
 
     def audit(self, address: str) -> Dict:
         return _fx(os.path.join("recorded", "demo-2026-10-04.json"))["audit"][address]["data"]
@@ -169,16 +186,18 @@ class LiveSource(OfflineSource):
 
 
 SCREENS = [
-    ("F10", "NFLXx: the token list and the price feed disagree on the multiplier",
-     [LIST.format(t=2), DYNAMIC.format(a=NFLXX)],
-     lambda s: check_f10(s.list_xstocks(), s.dynamic(NFLXX), NFLXX, s.recorded_dynamic(NFLXX))),
+    ("F10", "NFLXx: the token list and the price feed disagree on the multiplier (+ F16: its price is an old trade)",
+     [LIST.format(t=2), DYNAMIC.format(a=NFLXX), KLINE.format(a=NFLXX)],
+     lambda s: check_f10(s.list_xstocks(), s.dynamic(NFLXX), NFLXX, s.recorded_dynamic(NFLXX), s.kline(NFLXX))),
     ("F9", "xStocks and bStocks report no market session",
      [DYNAMIC.format(a=NFLXX), DYNAMIC.format(a=NFLXB)], lambda s: check_f9(s.dynamic(NFLXX), s.dynamic(NFLXB))),
     ("F12", "bStocks carry no underlying stock price", [DYNAMIC.format(a=NFLXB)], lambda s: check_f12(s.dynamic(NFLXB))),
-    ("F1", "Ondo outside trading hours: the stock price is the token price divided by the multiplier",
+    ("F1", "Ondo outside regular hours: stock price x multiplier = token price (not two independent prices)",
      [DYNAMIC.format(a=NFLXON)], lambda s: check_f1(s.dynamic(NFLXON))),
     ("F2", "Market status carries fields and values that are not documented", [MARKET], lambda s: check_f2(s.market())),
-    ("F7", "Token K-line volume is always 0", [KLINE.format(a=NFLXON)], lambda s: check_f7(s.kline(NFLXON))),
+    ("F7", "Ondo K-line volume is always 0 (xStocks and bStocks candles do carry volume)",
+     [KLINE.format(a=NFLXON), KLINE.format(a=NFLXX), KLINE.format(a=NFLXB)],
+     lambda s: check_f7(s.kline(NFLXON), {"NFLXx": s.kline(NFLXX), "NFLXB": s.kline(NFLXB)})),
     ("F14", "The wallet's required token audit has no data for a listed stock token",
      ["POST " + AUDIT + '  {"binanceChainId":"56","contractAddress":"' + NFLXON + '","requestId":"<uuid4>"}'],
      lambda s: check_f14(s.audit(NFLXON))),

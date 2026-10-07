@@ -55,8 +55,10 @@ def test_f12_bstock_stock_price_null():
 def test_f1_derived_reference_price():
     d = fx("dynamic_nflx_weekend.json")["data"]
     assert rf.check_f1(d)["reproduced"] is True
-    live = dict(d, stockInfo=dict(d["stockInfo"], price="69.165385"))   # an independent quote (seen 2026-10-07 04:38 UTC)
-    assert rf.check_f1(live)["reproduced"] is False
+    near = dict(d, stockInfo=dict(d["stockInfo"], price="67.0624"))          # within 5 bp, market closed -> near-copy
+    assert rf.check_f1(near)["reproduced"] is True
+    far = dict(d, stockInfo=dict(d["stockInfo"], price="66.0"))               # 1.6% apart -> independent
+    assert rf.check_f1(far)["reproduced"] is False
 
 
 def test_f2_undocumented_offhours_object_or_enum_value():
@@ -93,3 +95,17 @@ def test_live_source_failure_is_reported_not_raised():
 def test_render_shows_endpoint_and_result_line():
     text = rf.render(rf.run(rf.OfflineSource()), mode="offline")
     assert "[1/7] F10" in text and "reproduced: YES" in text and "/dynamic/ai" in text
+
+
+def test_f16_last_traded_candle_matches_the_token_price():
+    dyn = fx("dynamic_nflxx_weekend.json")["data"]
+    k = [[1790553600000, "77", "77", "71", "71.30272012919451", "408.97", 1790639999999]]
+    r = rf.check_f10(fx("list_nflx_three_issuers.json")["data"], dyn, rf.NFLXX, klines=k)
+    assert r["observed"]["last K-line candle with volume"].startswith("2026-09-28")
+    assert r["observed"]["tokenInfo.price == that close"] is True
+
+
+def test_f7_contrast_with_other_issuers():
+    k = fx("kline_nflx_1d.json")["data"]["klineInfos"]
+    r = rf.check_f7(k, {"NFLXB": [[0, "1", "1", "1", "1", "324468.9", 1]]})
+    assert r["reproduced"] is True and r["observed"]["NFLXB candles with volume > 0"] == 1

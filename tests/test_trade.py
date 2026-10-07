@@ -7,6 +7,8 @@ from stockguard.application.trade import run_guarded_trade
 from tests_support import FakeClient
 
 PRICE = 670.62353   # NFLXon fixture token price
+MULT = 10.0         # NFLXon shares per token (list multiplier = baw's scaleui multiplier)
+NFLX_ON = "0x7048f5227b032326cc8dbc53cf3fddd947a2c757"
 
 
 class FakeBaw:
@@ -25,8 +27,14 @@ class FakeBaw:
             return json.dumps({"success": True, "data": {"quotaLeft": self.quota, "tradeAllTokens": True,
                                                          "quotaDate": "2026-10-04"}})
         if cmd == "market-order quote":
+            # baw 1.10.0 semantics for tokenized stocks (dist/index.js): amounts are SHARES (multiplier 10 here).
+            # BUY: --fromTokenQty is USDT, toCoinAmount is shares. SELL: --fromTokenQty is shares, toCoinAmount USDT.
             qty = float(argv[argv.index("--fromTokenQty") + 1])
-            to = self.quote_tokens if self.quote_tokens is not None else qty / PRICE * 0.998
+            if argv[argv.index("--fromToken") + 1].lower() == NFLX_ON:
+                to = qty / MULT * PRICE * 0.998
+            else:
+                tokens = self.quote_tokens if self.quote_tokens is not None else qty / PRICE * 0.998
+                to = tokens * MULT
             return json.dumps({"success": True, "data": {"fromCoinAmount": str(qty), "toCoinAmount": str(to)}})
         if cmd == "market-order swap":
             return json.dumps({"success": True, "data": {"orderId": "42"}})
@@ -98,7 +106,8 @@ class FakeBawLimit(FakeBaw):
             self.calls.append(" ".join(argv))
             if "--symbol" in argv:
                 return json.dumps({"success": True, "data": [{"symbol": "USDT", "balance": str(self.usdt), "price": "1.0"}]})
-            return json.dumps({"success": True, "data": [{"symbol": "NFLXon", "balance": str(self.token), "price": "670"}]})
+            return json.dumps({"success": True, "data": [{"symbol": "NFLXon", "balance": str(self.token * MULT), "price": "67.0",
+                                                          "rawBalance": str(self.token), "rawPrice": "670", "multiplier": "10"}]})
         if cmd == "cli-check":
             self.calls.append(" ".join(argv))
             return json.dumps({"success": True, "data": {"currentCliVersion": "1.10.0", "needUpdateCli": False}})
@@ -143,8 +152,53 @@ def test_sell_into_bnb_quote_is_compared_in_dollars():
                 return json.dumps({"success": True, "data": [{"symbol": "BNB", "balance": "1", "price": "600"}]})
             if cmd == "market-order quote":
                 qty = float(argv[argv.index("--fromTokenQty") + 1])
-                return json.dumps({"success": True, "data": {"fromCoinAmount": str(qty),
-                                                             "toCoinAmount": str(qty * PRICE / 600 * 0.998)}})
+                return json.dumps({"success": True, "data": {"fromCoinAmount": str(qty),     # qty is shares
+                                                             "toCoinAmount": str(qty / MULT * PRICE / 600 * 0.998)}})
             return super().__call__(argv)
     r = trade(SellBnb(), side="SELL", pay_with="BNB")
     assert r["stage"] == "done", r.get("result")
+
+
+def test_sell_market_order_is_sent_in_shares_and_quote_checked_in_tokens():
+    fake = FakeBawLimit(token=10.0)
+    r = trade(fake, side="SELL", usd=100.0)
+    swap = [c for c in fake.calls if c.startswith("market-order swap")][0]
+    assert "--fromTokenQty 1.491149" in swap                 # shares, as baw expects
+    assert r["stage"] == "done" and r["quote"]["check"] == "PROCEED"
+
+
+def test_buy_quote_in_shares_is_not_mistaken_for_a_90_percent_discount():
+    r = trade(FakeBaw(), usd=5.0)
+    assert r["quote"]["check"] == "PROCEED" and abs(r["quote"]["to"] - 5.0 / PRICE * 0.998) < 1e-9
+
+
+def test_requote_worse_than_accepted_asks_again():
+    seen = []
+    class Drift(FakeBaw):
+        n = 0
+        def __call__(self, argv):
+            import json
+            if " ".join(argv[:2]) == "market-order quote":
+                Drift.n += 1
+                qty = float(argv[argv.index("--fromTokenQty") + 1])
+                worse = 0.998 if Drift.n == 1 else 0.97          # 3% worse on the re-quote
+                return json.dumps({"success": True, "data": {"fromCoinAmount": str(qty),
+                                                             "toCoinAmount": str(qty / PRICE * worse * MULT)}})
+            return super().__call__(argv)
+    clock = iter([0.0, 100.0])
+    r = run_guarded_trade(Guard(FakeClient(), to_snapshot), AgenticWallet(BawRunner(run=Drift())), "NFLXon", 5.0,
+                          confirm=lambda s: seen.append(s["quote"]["check"]) or len(seen) == 1,
+                          sleep=lambda s: None, today="2026-10-04", clock=lambda: next(clock, 100.0))
+    assert seen == ["PROCEED", "CONFIRM"] and r["stage"] == "confirm" and "re-quote" in r["result"]
+
+
+def test_gate_quote_json_applies_the_wallet_quote_check():
+    from stockguard.application.trade import apply_wallet_quote
+    from stockguard.application.wallet_gate import gate_swap
+    g = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0)
+    good = {"success": True, "data": {"fromCoinAmount": "100", "toCoinAmount": str(100 / PRICE * 0.998 * MULT)}}
+    bad = {"success": True, "data": {"fromCoinAmount": "100", "toCoinAmount": str(100 / PRICE * 0.90 * MULT)}}
+    assert apply_wallet_quote(g, good)["quote_check"]["level"] == "PROCEED"
+    r = apply_wallet_quote(g, bad)
+    assert r["action"] == "REFUSE" and r["baw_commands"] == [] and "worse" in r["reasons"][-1]
+    assert apply_wallet_quote(g, {"success": False})["action"] == "REFUSE"

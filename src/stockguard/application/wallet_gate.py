@@ -84,8 +84,10 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
     elif today and settings.quota_date and settings.quota_date != today:
         notes.append(f"The wallet settings are from {settings.quota_date}, not today ({today}) — quotaLeft may be "
                      f"stale; read them again.")
-    if slippage is None:
-        notes.append('No slippage given: the wallet will use slippage "auto" (its default) — tell the user.')
+    if slippage is None:          # same cap as `trade`: an agent copying these commands never gets "auto"
+        slippage = 1.0
+        notes.append('No slippage given: capped at 1% (instead of the wallet\'s "auto" default) — tell the user; '
+                     'pass --slippage to change it.')
     trigger = None
     action = d.action
     reasons = list(d.reasons)
@@ -116,6 +118,9 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
                                    else (approved / qty_at) if qty_at else 0.0),
             "pay_qty": (approved / pay_price) if pay_with == "BNB" and pay_price else approved,
             "token_price": price, "multiplier": r["multiplier"], "shares_label": r.get("shares_label"),
+            # the multiplier `baw` itself applies (its RWA list = scaleui/list, identical to list/ai for all 675 BSC
+            # tokens on 2026-10-07): market-order SELL quantities, quotes and balances are in SHARES in baw 1.10.0
+            "wallet_multiplier": r.get("list_multiplier") or r["multiplier"],
             "verdict": r["verdict"], "risk": r["risk"], "reasons": reasons, "notes": notes,
             "confirmation_required": d.confirmation_required or action == CONFIRM,
             "slippage": slippage, "trigger_token_price": trigger,

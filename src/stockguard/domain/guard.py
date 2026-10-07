@@ -9,6 +9,7 @@ OUTSIDE_REGULAR = {"premarket", "postmarket", "overnight", "offhours"}
 _RANK = {ALLOW: 0, WARN: 1, BLOCK: 2}
 MULTIPLIER_CONFLICT = 0.01   # list vs price-feed multiplier differing by more than 1% is a conflict
 DATA_ERROR_GAP = 0.25        # a token more than 25% away from its reference price is treated as bad data
+STALE_WARN_H, STALE_BLOCK_H = 72.0, 168.0   # last trade-derived K-line candle older than 3 days / 7 days
 
 PAUSE_REASONS = {
     "cash_dividend": "Paused for a cash dividend",
@@ -40,6 +41,7 @@ class Snapshot:
     list_multiplier: Optional[float] = None  # multiplier as the token list reports it (may disagree with the price feed)
     api_supply: Optional[float] = None       # circulatingSupply as the API reports it
     multiplier_known: bool = True            # False when the API sent no sharesMultiplier (1.0 is then an assumption)
+    last_trade_age_h: Optional[float] = None # hours since the last K-line candle that carried volume (None = unknown)
 
     @property
     def supply_mismatch(self) -> bool:
@@ -100,7 +102,7 @@ class Verdict:
 LARGE_FLOAT_SHARE = 0.01   # an order bigger than 1% of all tokens in existence is unusually large for this token
 
 # Risk weights (documented; additive, capped at 100). They rank warnings, they are not probabilities.
-RISK_WEIGHTS = {"halt_or_pause_or_no_token_price_or_price_off_25pct": 100, "multiplier_conflict": 40, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
+RISK_WEIGHTS = {"halt_or_pause_or_no_token_price_or_price_off_25pct_or_no_trade_7d": 100, "last_trade_over_3d": 30, "multiplier_conflict": 40, "earnings_limited": 40, "market_closed": 15, "outside_regular_hours": 10,
                 "multiplier": "up to 30, grows with |log10(multiplier)|", "multiplier_missing": 30,
                 "premium": "1 point per 0.1% beyond threshold, max 40", "no_session_reported": 10,
                 "no_independent_price": 15}
@@ -155,7 +157,22 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
             v.raise_to(WARN, msg)
             v.add_risk(min(30, int(10 * abs(math.log10(s.multiplier)) * 3)))
 
-    p = s.premium
+    age = s.last_trade_age_h
+    if age is not None and age > STALE_BLOCK_H:
+        v.raise_to(BLOCK, f"No on-chain trade for {age / 24:.0f} days — the token price is that old last trade, not a "
+                          f"market price"); v.add_risk(100)
+    elif age is not None and age > STALE_WARN_H:
+        v.raise_to(WARN, f"Last on-chain trade was {age / 24:.0f} days ago — the token price may be stale, so no premium "
+                         f"is computed"); v.add_risk(30)
+    stale = age is not None and age > STALE_WARN_H
+    if stale:
+        v.premium = None
+    p = None if stale else s.premium
+    if s.multiplier_conflict and s.stock_price and s.stock_price > 0 and s.token_price and not stale:
+        gap = s.token_price / (s.stock_price * s.effective_multiplier) - 1.0   # the candidate the prices support
+        if abs(gap) > DATA_ERROR_GAP:
+            v.raise_to(BLOCK, f"Token price is {gap * 100:+.0f}% off the reference price even with the multiplier the "
+                              f"prices support — that is a data error, not a bargain"); v.add_risk(100)
     if p is not None and abs(p) > DATA_ERROR_GAP:
         v.raise_to(BLOCK, f"Token price is {p * 100:+.0f}% off the reference price — that is a data error or a broken "
                           f"market, not a bargain"); v.add_risk(100)

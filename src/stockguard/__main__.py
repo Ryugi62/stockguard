@@ -1,3 +1,5 @@
+import sys
+
 from stockguard.infrastructure.cli import main
 
-main()
+sys.exit(main())

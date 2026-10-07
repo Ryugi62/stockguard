@@ -46,3 +46,14 @@ def test_list_filters_chain():
     c = RwaClient(http_get=lambda u: load("list_sample.json"), sleep=lambda s: None)
     toks = c.list_tokens("56")
     assert {t["symbol"] for t in toks} >= {"NFLXon", "AAPLon"}
+
+
+def test_near_copy_outside_regular_hours_is_not_an_independent_quote():
+    from stockguard.adapters.mapping import to_snapshot
+    d = {"tokenInfo": {"price": "692.1988", "sharesMultiplier": "10"}, "stockInfo": {"price": "69.219761"},
+         "statusInfo": {"marketStatus": "overnight", "reasonCode": "TRADING"}}
+    assert to_snapshot(d).reference_derived is True                    # 1.7e-6 apart, overnight (2026-10-07)
+    reg = dict(d, statusInfo={"marketStatus": "regular", "reasonCode": "TRADING"})
+    assert to_snapshot(reg).reference_derived is False                 # regular session: a real 0.0002% premium
+    far = dict(d, stockInfo={"price": "68.0"})
+    assert to_snapshot(far).reference_derived is False                 # 1.8% apart: independent

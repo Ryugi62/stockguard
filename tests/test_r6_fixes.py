@@ -76,3 +76,9 @@ def test_missing_baw_is_a_preflight_message_not_a_traceback():
     r = run_guarded_trade(Guard(FakeClient(), to_snapshot), AgenticWallet(BawRunner(run=run)), "NFLXon", 5.0,
                           confirm=lambda s: True, sleep=lambda s: None)
     assert r["stage"] == "preflight" and "baw CLI not found" in r["result"]
+
+
+def test_trigger_keeps_six_significant_digits_above_one_dollar():
+    from stockguard.adapters.agentic_wallet import _price
+    assert _price(10.02613) == "10.0261" and _price(750.0) == "750.00" and _price(0.0246667) == "0.0246667"
+    assert _price(1234.5678) == "1234.57"

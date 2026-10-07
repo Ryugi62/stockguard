@@ -63,7 +63,7 @@ def test_gate_end_to_end_emits_exact_baw_commands_for_a_buy():
     assert out["action"] == PROCEED and any("Heads-up" in n for n in out["notes"])   # weekend, risk 30 < 40
     cmds = commands(out)
     assert cmds[0] == (f"baw market-order quote --fromTokenQty 100.00 --fromToken {USDT_BSC} --toToken {NFLX_ON} "
-                       f"--binanceChainId 56 --json")
+                       f"--binanceChainId 56 --slippage 1 --json")
     assert cmds[1].startswith("baw market-order swap --fromTokenQty 100.00") and cmds[1].endswith("--json")
     assert cmds[2].startswith("baw market-order list --orderId")
 
@@ -91,10 +91,19 @@ def test_contract_address_not_in_the_official_list_is_refused():
     assert out["action"] == REFUSE and any("not in the RWA token list" in r for r in out["reasons"])
 
 
-def test_sell_swaps_token_into_usdt_by_token_quantity():
+def test_sell_swaps_token_into_usdt_by_share_quantity():
+    # baw 1.10.0 reads a tokenized-stock SELL --fromTokenQty as SHARES and divides by the multiplier (F17):
+    # $100 of NFLXon = 0.149115 tokens = 1.491149 shares (rounded down: never sell more than requested)
     out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, side="SELL")
     swap = commands(out)[1]
-    assert f"--fromToken {NFLX_ON} --toToken {USDT_BSC}" in swap and "--fromTokenQty 0.149114" in swap   # rounded down: never sell more than requested
+    assert f"--fromToken {NFLX_ON} --toToken {USDT_BSC}" in swap and "--fromTokenQty 1.491149" in swap
+    assert out["wallet_multiplier"] == 10.0
+
+
+def test_limit_sell_stays_in_token_units():
+    # limit-order create sends the amount as given (no multiplier division in baw 1.10.0)
+    out = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, side="SELL", trigger_share_price=75.0)
+    assert "--fromTokenQty 0.133333" in commands(out)[0] and "--triggerPrice 750.00" in commands(out)[0]
 
 
 def test_low_risk_warn_proceeds_with_heads_up_notes_not_confirm_fatigue():
