@@ -67,6 +67,13 @@ Ubiquitous language: **Gate action** — `PROCEED | CONFIRM | ASK | REFUSE`. **W
 - Given a per-asset `marketStatus` of null, then it is reported as a data inconsistency and the verdict is ≥ WARN. A market-wide `pause` → BLOCK even then.
 - Given a multiplier conflict and an API-vs-chain supply mismatch (> 0.1%), then BLOCK ("token terms can't be verified"). On a conflict alone, the share count follows the price ratio.
 
+## UC-7 Reproduce the DX findings (`scripts/reproduce_findings.py`)
+Purpose: anyone (a judge, the W3W team, the report author) can see seven findings from `docs/dx-findings.md` on the real endpoints in one command. Success: 7 screens (F10, F9, F12, F1, F2, F7, F14) in that order, each with the exact request, the raw fields, the expectation and `reproduced: YES|NO`; live run < 10 s (measured 1.1 s); `--offline` reproduces all 7 from the recorded responses (test `test_reproduce_findings.py`).
+- Given the list says multiplier 1 and the price feed says 10, then F10 = YES; given both say 1, then NO.
+- Given a token price equal to the recording's, then F10 shows `tokenInfo.price unchanged since recording: true`.
+- Given one endpoint fails, then that screen shows the error and NO, and the other screens still run.
+- Given an independent stock quote (stock × multiplier ≠ token price), then F1 = NO with a note that it depends on the session.
+
 ## Non-goals
 - No trading strategy, no PnL claims, no perps.
 - No private keys handled by StockGuard (signing stays in the wallet / Agentic Wallet).

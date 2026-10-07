@@ -93,11 +93,12 @@ Scans of every BSC stock token: 2026-10-03 (Ondo, 458 tokens, 7.4 s) and 2026-10
 - 432 of 458 Ondo tokens reported a weekend "stock price" equal to the token price ÷ multiplier, so premium checks read 0%.
 - xStocks and bStocks reported `marketStatus: null` and `reasonCode: TRADING` for all 217 tokens on a Sunday. At the same moment Ondo reported 426 `closed`, 31 `offhours` and 1 `regular` (USDY).
 - For 39 of 130 xStocks, the token list and the price feed give different multipliers: NFLXx 1 vs 10, CRWDx 1 vs 4, TQQQx 1 vs 2.01, AZNx 1 vs 0.51. The supply is off by the same factor: NFLXx totalSupply on chain 100,000 vs API 10,000. 77 of 130 xStocks had no token price.
+- NFLXx's token price came back as the same 38-digit string on Sunday 2026-10-04 and Wednesday 2026-10-07, while the stock moved from $67.06 to $69.16. Nothing in the payload marks it stale (F16). The BSC price feed's NFLXx multiplier (10) equals the Solana entry's, not the BSC entry's (1).
 - The token security audit that the Agentic Wallet skill requires before every swap returned `hasResult: false, isSupported: false` for 663 of 675 stock tokens: all 458 Ondo, all 130 xStocks, 75 of 87 bStocks. The 12 bStocks with data were all `riskLevel 0`. USDT came back `riskLevel 3`. Raw: `data/audit-all-20261004.jsonl` (`scripts/audit_sample.py --n 0`).
 - 38 tickers exist under all three issuers, with different terms. NFLX is 10 shares per token on Ondo and 1 on bStocks. CRWD is 4 and 1.
 - Multiplier exposure (simple arithmetic on the real multipliers, not an observed agent): sizing "$1,000" by the per-share price instead of the per-token price buys **$10,026 of KLAC** or **$66.67 of ENLV** (`stockguard replay data/scan-20261003-weekend.jsonl`). On the `baw` market-order path a BUY is sized in USDT, so this bites in limit-order triggers and SELL quantities. The gate converts both.
 
-The raw notebook with reproduction commands is `docs/dx-findings.md`. The skeleton for the human-written DX report is `docs/dx-report-TEMPLATE.md`.
+Seven of these findings in one command, on the live endpoints: `python3 scripts/reproduce_findings.py` (about 1 s, no key; `--offline` replays the recorded responses). The raw notebook with reproduction commands is `docs/dx-findings.md`. The skeleton for the human-written DX report is `docs/dx-report-TEMPLATE.md`.
 
 ## Use it from an agent
 
@@ -123,7 +124,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 123 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 134 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

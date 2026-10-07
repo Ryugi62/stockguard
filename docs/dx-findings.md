@@ -5,12 +5,13 @@ This file is a lab notebook: what the public tokenized-securities endpoints retu
 Snapshots: first scan 2026-10-03 ~04:45 UTC, rescan ~05:05 UTC (`data/scan-20261003-weekend.jsonl`) — 458 BSC tokens (chainId 56), Saturday, US market closed. Scan time 7.3–7.4 s, 0 request errors. Counts below are from the rescan unless stated; they move a little between scans.
 Doc references point at the public skill file: https://github.com/binance/binance-skills-hub/blob/main/skills/binance-web3/binance-tokenized-securities-info/SKILL.md (line numbers as of 2026-10-03).
 
-Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
+Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (all tokens) · `python3 scripts/reproduce_findings.py` (seven findings, one screen each, live in ~1 s; `--offline` for the recorded responses)
 
 ## F1. Weekend "stock price" is the token price divided by the multiplier
 - 432 of 458 tokens (427 in the first scan): `stockInfo.price × tokenInfo.sharesMultiplier == tokenInfo.price` to 1e-6.
 - Example NFLXon (`0x7048f5227b032326cc8dbc53cf3fddd947a2c757`): token 670.62353, stock 67.062353, multiplier 10.
 - The skill doc (SKILL.md L473, Stock Info table) says `stockInfo.price` "May be null outside trading hours". It is not null; it is filled with a value derived from the token itself.
+- Weekday recheck 2026-10-07 (Wednesday, US `overnight` session): NFLXon at 04:42 UTC token 691.625, stock 69.1625, multiplier 10 (derived again); at 04:38 UTC token 691.66842 vs stock 69.165385 (independent). So it is not weekend-only.
 - Effect: any premium/discount computed from this API outside US hours is always 0%. A bot cannot see whether it is overpaying on weekends. 8 tokens did return `null` (MAG7Xon, BLKDIGon, BRAINon, BLKHIon, YLD8on, BLKGRWon, YLD5on, and USDY), so client code must handle both.
 - Fixture: `fixtures/dynamic_nflx_weekend.json`.
 
@@ -45,7 +46,7 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 - `totalSupply()` read directly from the NFLXon contract over public BSC RPC = 220.9909 tokens, equal to the API `circulatingSupply`. Total value on BNB Chain ≈ $148k, so a $20k order is ~13% of every NFLXon token in existence — StockGuard shows that as a size note. Supply is not depth (Ondo mints on demand), so price impact still needs a trade quote (Trading API — key required).
 
 ## F9. xStocks and bStocks say "TRADING" with no market status on a Sunday  (scan 2026-10-04 04:45 UTC, `data/scan-20261004-all-issuers.jsonl`)
-- Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (lists `type=1,2,3`), then count `session == ""` per `issuer`.
+- Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (all tokens) · `python3 scripts/reproduce_findings.py` (seven findings, one screen each, live in ~1 s; `--offline` for the recorded responses) (lists `type=1,2,3`), then count `session == ""` per `issuer`.
 - 130/130 xStocks and 87/87 bStocks: `statusInfo.marketStatus: null`, `reasonCode: "TRADING"`, `nextOpenTime: null`. Same moment, Ondo: 426 `closed` + 31 `offhours` + 1 `regular`, and the market-wide endpoint said `closed / "Weekend or Holiday"`.
 - Fixtures: `fixtures/dynamic_nflxx_weekend.json`, `fixtures/dynamic_nflxb_weekend.json`.
 - Effect: one API, three issuers, three different answers to "is this tradeable now". A client written against Ondo responses treats every xStock/bStock as open 24/7.
@@ -53,6 +54,7 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 ## F10. xStocks: the token list and the price feed disagree on the multiplier (39 of 130)
 - Reproduce: `PYTHONPATH=src python3 -m stockguard compare NFLX --offline` (or live without `--offline`).
 - `list/ai?type=2` says `multiplier: "1"` for NFLXx; `dynamic/ai` says `sharesMultiplier: "10"`. The token price (71.30 vs stock 67.06) looks like about 1 share, not 10. Others: CRWDx 1 vs 4, TQQQx 1 vs 2.009, AZNx 1 vs 0.511, CMCSAx 1 vs 1.088 (39 tokens differ by more than 1%).
+- `list/ai?type=2` also returns a Solana entry for NFLXx (`chainId: "CT_501"`, `multiplier: "10"`); the BSC entry says `"1"`. The BSC price feed's `sharesMultiplier` (`"10"`) equals the Solana value (checked 2026-10-07 04:4x UTC). Same pattern for CRWDx (Solana 4, BSC 1).
 - On-chain: NFLXx `totalSupply()` = 100,000 tokens (BSC RPC), API `circulatingSupply` = 10,000 — again a factor of 10.
 - Effect: a client can't know how many shares it is buying. If it trusts `sharesMultiplier`, NFLXx shows a phantom 89% discount. StockGuard refuses to compute a premium for these tokens and warns.
 
@@ -71,11 +73,16 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl`
 - Reproduce: `curl -X POST https://web3.binance.com/bapi/defi/v1/public/wallet-direct/security/token/audit -H 'Content-Type: application/json' -H 'source: agent' -H 'User-Agent: binance-web3/1.4 (Skill)' -d '{"binanceChainId":"56","contractAddress":"0x7048f5227b032326cc8dbc53cf3fddd947a2c757","requestId":"<uuid4>"}'`
 - Full run 2026-10-04 05:10–05:15 UTC over all 675 BSC stock tokens (raw `data/audit-all-20261004.jsonl`, `PYTHONPATH=src python3 scripts/audit_sample.py --n 0 --out …`): 663 returned `hasResult: false, isSupported: false, riskLevel: -1` — all 458 Ondo, all 130 xStocks, 75 of 87 bStocks. The 12 bStocks with data (GPROB, RDDTB, CYPHB, AGPUB, AMCB, ZMB, HPEB, ADBEB, SHAZB, FWDIB, PDDB, WENB) were all `riskLevel 0`. USDT returned `hasResult: true, riskLevel: 3` (MEDIUM), last line of the same file.
 - The Agentic Wallet skill (`references/security.md` §1) requires this audit before every `market-order swap` / `limit-order`, and when it is unavailable it requires "explicit user acknowledgment". So every tokenized-stock order an agent places ends in an acknowledgment prompt that carries no information about the stock. StockGuard is built to supply the stock-specific checks that the audit does not cover.
+- The no-data response still carries `riskLevelEnum: "LOW"` next to `riskLevel: -1` (NFLXon, 2026-10-04 and again 2026-10-07 04:42 UTC). The skill's own rule says not to show the level when `hasResult` is false, so a client that reads only `riskLevelEnum` shows "LOW" for a token that was never audited.
 - Recorded responses for the demo tokens: `fixtures/recorded/demo-2026-10-04.json` → `audit`.
 
 ## F15. Notes from installing `baw` (npm `@binance/agentic-wallet` 1.10.0, not signed in)
 - `--json` is a global option: it is not listed in each subcommand's `--help` (`baw market-order swap --help`), only in `baw --help`. The skill says to "Always append `--json`", and it works after the subcommand.
 - Without signing in, `wallet status` answers `{"success": true, "data": {"status": "UNCONNECTED"}}`, but `market-order quote` fails with `NOT_LOGGED_IN` (code 10003000). So a read-only price quote needs a signed-in wallet. Raw output: `fixtures/baw/`.
+
+## F16. NFLXx token price frozen for three days, with nothing marking it stale
+- `dynamic/ai` for NFLXx (`0xa6a65ac27e76cd53cb790473e4345c46e5ebf961`) returned `tokenInfo.price: "71.302720129194506196863678605096598194"` on 2026-10-04 04:54 UTC (Sunday, `fixtures/dynamic_nflxx_weekend.json`) and the identical string on 2026-10-07 04:42 UTC (Wednesday). In the same window `stockInfo.price` moved 67.06 → 69.16 and NFLXB's token price moved 67.71 → 69.24.
+- The payload has no timestamp or source field for the token price, so a client can't tell a live price from one that stopped updating. Reproduce: `python3 scripts/reproduce_findings.py` (screen 1, line `tokenInfo.price unchanged since recording`).
 
 ## Latency (2026-10-04 04:43 UTC, n=10 per endpoint, `PYTHONPATH=src python3 scripts/latency.py`, raw `data/latency-20261004.json`)
 - p50 74–111 ms, p95 130–189 ms, max 424 ms (list type=2). The `list` call is the slowest. A full 675-token scan takes 13.8 s with 8 workers.
