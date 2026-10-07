@@ -89,7 +89,7 @@ def commands(gate: Dict) -> List[str]:
         a = _args(gate, limit=True)
         return [f"baw limit-order {side} --triggerPrice {_price(gate['trigger_token_price'])} {a}{_slip(gate)} --json",
                 "baw limit-order list --strategyId <strategyId from the order> --json   # placed is not filled (the list shows "
-                "the trigger per SHARE); if it was rejected, stop and ask — never a market order"]
+                "the trigger and the amount per SHARE); if it was rejected, stop and ask — never a market order"]
     unit = (f"   # {_floor(sell_shares(gate))} shares = {_floor(gate['approved_token_qty'])} {gate.get('symbol', '')} tokens "
             f"(baw reads a tokenized-stock SELL amount as shares)") if gate["side"] == "SELL" else ""
     return [f"baw market-order quote {a}{_slip(gate)} --json{unit}",
@@ -167,6 +167,12 @@ class AgenticWallet:
         if not isinstance(rows, list):
             return None
         return float(rows[0]["balance"]) if rows else 0.0
+
+    def tx_locked(self):
+        """`baw wallet tx-lock` (wallet-view.md): LOCKED = a transaction is in flight, or a double-confirm is waiting in
+        the Binance App (NeedConfirmation). None when the CLI doesn't answer."""
+        d = self._data(self.baw("baw wallet tx-lock --binanceChainId 56 --json"))
+        return None if not isinstance(d, dict) else d.get("status") == "LOCKED"
 
     def cli_ok(self, required="1.10.0"):
         d = self._data(self.baw(f"baw cli-check --required-version {required} --json")) or {}

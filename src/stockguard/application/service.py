@@ -24,9 +24,9 @@ class SupplyPort(Protocol):
 
 
 class TickerNotFound(KeyError):
-    def __init__(self, query: str, suggestions: Optional[List[str]] = None):
+    def __init__(self, query: str, suggestions: Optional[List[str]] = None, reason: Optional[str] = None):
         super().__init__(query)
-        self.query, self.suggestions = query, suggestions or []
+        self.query, self.suggestions, self.reason = query, suggestions or [], reason
 
 
 class AmbiguousTicker(LookupError):
@@ -59,6 +59,10 @@ def last_trade_age_hours(klines: List, now_s: float) -> Optional[float]:
     return max(0.0, (now_s * 1000 - float(traded[-1][6])) / 3.6e6)
 
 
+# type 4 in baw's scaleui/list (BSC, 2026-10-07): pre-IPO tokens; baw applies share conversion to them too (F17)
+PRE_IPO_TYPE4 = {"xklsh", "xopai", "xspcx", "ppoly"}
+
+
 class Guard:
     def __init__(self, client: RwaPort, to_snapshot: ToSnapshot, chain_id: str = "56", list_ttl: float = 600.0,
                  onchain: Optional[SupplyPort] = None, clock: Callable[[], float] = time.time):
@@ -85,6 +89,10 @@ class Guard:
             return hits[0]
         if len(hits) > 1:
             raise AmbiguousTicker(query, [self.candidate(t) for t in hits])
+        if q in PRE_IPO_TYPE4:
+            raise TickerNotFound(query, [], reason=f"{query} is a pre-IPO RWA token (type 4 in the wallet's RWA list), "
+                                                   f"not a listed stock — StockGuard covers listed stocks only (types "
+                                                   f"1–3) and refuses it")
         import difflib
         names = sorted({str(t.get("ticker", "")) for t in self.tokens()} | {str(t.get("symbol", "")) for t in self.tokens()})
         raise TickerNotFound(query, difflib.get_close_matches(query.strip().upper(), names, n=3, cutoff=0.6))
@@ -158,6 +166,8 @@ class Guard:
         try:                        # Market API K-line: when did this token last trade on-chain? (F16)
             kl = self.client.kline(t["contractAddress"], "1d", 10, self.chain_id) if hasattr(self.client, "kline") else []
             s = dataclasses.replace(s, last_trade_age_h=last_trade_age_hours(kl, self.clock()))
+            if kl and s.last_trade_age_h is None:
+                notes.append(f"{s.symbol}: K-line candles carry no volume, so when it last traded is unknown")
         except Exception as e:      # a bonus signal; never fail the check on it
             notes.append(f"{s.symbol}: K-line read failed ({type(e).__name__})")
         return s, notes
@@ -174,8 +184,11 @@ class Guard:
             except Exception:
                 continue
             if price:
+                pinned = s.session != "regular" and str(other.get("symbol", "")).endswith("on")
                 notes.append(f"{s.symbol}: no stock quote of its own; using the {t.get('ticker')} quote from "
-                             f"{other.get('symbol')} (the stock feed is shared across issuers)")
+                             f"{other.get('symbol')} (the stock feed is shared across issuers)" +
+                             (f" — outside regular hours that quote is pinned to {other.get('symbol')}'s token, so "
+                              f"the premium is a cross-issuer spread, not a premium over the real stock" if pinned else ""))
                 return dataclasses.replace(s, stock_price=price, reference_source=other.get("symbol"))
         return s
 

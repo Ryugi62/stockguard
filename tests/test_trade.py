@@ -225,3 +225,23 @@ def test_quote_for_a_different_amount_stops_before_the_swap():
     fake = WrongSize()
     r = trade(fake, usd=5.0)
     assert r["stage"] == "quote" and "amount or its unit" in r["result"] and not any("swap" in c for c in fake.calls)
+
+
+def test_tx_lock_stops_before_any_order():
+    import json
+    class Locked(FakeBaw):
+        def __call__(self, argv):
+            if " ".join(argv[:2]) == "wallet tx-lock":
+                return json.dumps({"success": True, "data": {"status": "LOCKED"}})
+            return super().__call__(argv)
+    fake = Locked()
+    r = trade(fake, usd=5.0)
+    assert r["stage"] == "tx-lock" and not any("swap" in c or "quote" in c for c in fake.calls)
+
+
+def test_ondo_limit_order_gets_a_heads_up_and_pre_ipo_tokens_are_refused_by_name():
+    from stockguard.application.wallet_gate import gate_swap
+    g = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, side="SELL", trigger_share_price=75.0)
+    assert any("Ondo-related tokens cannot be traded" in n and n.startswith("Heads-up") for n in g["notes"])
+    r = gate_swap(Guard(FakeClient(), to_snapshot), "xOPAI", 100.0)
+    assert r["action"] == "REFUSE" and "pre-IPO" in r["reasons"][0]

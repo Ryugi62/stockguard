@@ -19,3 +19,11 @@ def test_trade_exit_codes():
     assert trade_exit_code({"stage": "pending", "status": "PENDING"}) == 3
     assert trade_exit_code({"stage": "preflight", "result": "not ready"}) == 1
     assert trade_exit_code({"stage": "done", "status": "FAILED"}) == 1
+
+
+def test_text_output_is_short_and_human(capsys):
+    main(["check", "NFLXon", "--usd", "1000", "--offline", "--text"])
+    out = capsys.readouterr().out
+    assert out.startswith("NFLXon (Ondo Global Markets): WARN") and "--json for the full answer" in out
+    main(["gate", "NFLXon", "--usd", "100", "--offline", "--json"])
+    assert capsys.readouterr().out.lstrip().startswith("{")

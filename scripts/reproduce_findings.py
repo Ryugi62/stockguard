@@ -83,13 +83,13 @@ def check_f1(dyn_ondo: Dict) -> Dict:
         _f((dyn_ondo.get("tokenInfo") or {}).get("sharesMultiplier"))
     session = (dyn_ondo.get("statusInfo") or {}).get("marketStatus")
     gap_bp = abs(s * m / t - 1) * 1e4 if (t and s and m) else None
-    near_copy = gap_bp is not None and session != "regular" and gap_bp <= 5
+    near_copy = gap_bp is not None and session != "regular" and gap_bp <= 50
     return {"observed": {"tokenInfo.price": t, "stockInfo.price": s, "sharesMultiplier": m,
                          "gap between stockInfo.price x multiplier and tokenInfo.price (bp)": None if gap_bp is None else round(gap_bp, 3),
                          "statusInfo.marketStatus": session},
-            "expected": "outside regular hours: stockInfo.price null or an independent quote (SKILL.md L473), not the token price within 5 bp",
+            "expected": "outside regular hours: stockInfo.price null or an independent quote (SKILL.md L473), not the token price within 50 bp",
             "reproduced": near_copy,
-            "note": "session-dependent: exact on weekends (432/458 tokens), within 2 bp overnight 2026-10-07; NO = independent right now"}
+            "note": "session-dependent: exact on weekends (432/458 tokens), within 50 bp for 449/458 Ondo tokens overnight 2026-10-07; NO = independent right now"}
 
 
 def check_f2(market: Dict) -> Dict:

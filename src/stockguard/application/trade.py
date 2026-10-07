@@ -123,6 +123,9 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
         if held + 1e-12 < gate["approved_token_qty"]:
             return {"stage": "balance", "gate": gate, "result": f"Wallet holds {held:g} {gate['symbol']}, "
                                                                  f"less than the {gate['approved_token_qty']:g} to sell"}
+    if hasattr(wallet, "tx_locked") and wallet.tx_locked():
+        return {"stage": "tx-lock", "gate": gate, "result": "The wallet has a transaction in progress, or one waiting for "
+                                                            "your confirmation in the Binance App — finish that first"}
     if gate.get("trigger_token_price"):
         if not confirm({"gate": gate}):
             return {"stage": "confirm", "gate": gate, "result": "Not confirmed — nothing was placed"}
@@ -177,6 +180,7 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
         sleep(2.0)
     if status not in ("FINISHED", "FAILED"):
         return {"stage": "pending", **summary, "order_id": oid, "status": status, "tx_hash": tx,
-                "result": f"Order {oid} is still processing — not a success yet. Re-check with "
+                "result": f"Order {oid} is still processing — not a success yet. If your wallet asks for a second "
+                          f"confirmation (NeedConfirmation), approve it in the Binance App; re-check with "
                           f"`baw market-order list --orderId {oid} --json`."}
     return {"stage": "done", **summary, "order_id": oid, "status": status, "tx_hash": tx}

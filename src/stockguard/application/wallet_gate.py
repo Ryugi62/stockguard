@@ -54,6 +54,8 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
         if query.strip().lower().startswith("0x"):
             return _refuse(query, side, usd_amount, f"Contract {query} is not in the RWA token list — never trade an "
                                                     f"address that did not come from the official list")
+        if getattr(e, "reason", None):
+            return _refuse(query, side, usd_amount, e.reason)
         hint = f" Did you mean {', '.join(e.suggestions)}?" if e.suggestions else ""
         return _refuse(query, side, usd_amount, f"No tokenized stock on BNB Chain matches '{query}'.{hint}")
     except Exception as e:  # token list unreachable: no fresh check, no trade
@@ -100,6 +102,10 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
                 action = CONFIRM if action != REFUSE else action
                 reasons = reasons + [f"Limit trigger ${trigger:,.2f} per token is already met (the token trades at "
                                      f"${px:,.2f}) — the order would fire immediately, like a market order"]
+            if str(r["symbol"]).endswith("on"):
+                notes.append("Heads-up to show the user: the wallet skill quotes an `Ondo-related tokens cannot be "
+                             "traded` error for limit orders — this Ondo limit order may be rejected; then stop, don't "
+                             "switch to a market order.")
             notes.append(f"Limit order: ${trigger_share_price:,.2f} per {r['ticker']} share = ${trigger:,.2f} per "
                          f"{r['symbol']} token (1 token = {r['multiplier']:.4g} shares). If the wallet rejects the limit "
                          f"order, stop and ask the user — do not fall back to a market order (skill, step 7).")

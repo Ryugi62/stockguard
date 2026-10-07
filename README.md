@@ -19,13 +19,14 @@ python3 demo.py --live     # the same walkthrough on live public data
 `demo.py` replays **recorded real responses** (`fixtures/recorded/demo-2026-10-04.json`, captured 2026-10-04 04:54 UTC by `scripts/record_demo_fixtures.py`). It runs in under a second. One token in it, `SPLITDEMOon`, is synthetic and labelled as such everywhere: it shows the stock-split `REFUSE` path, which can't be observed on a weekend. Python ≥3.9, standard library only.
 
 What the demo shows:
-1. "NFLX" is three different tokens: NFLXon is 10 Netflix shares per token, NFLXB is 1, and NFLXx is 1 or 10 depending on which endpoint you ask. StockGuard asks which one you mean instead of guessing. It also shows the price per share: $67.06, $71.30 and $67.59 for the same share (6.3% apart), and $71.30 per token only makes sense for NFLXx if it is 1 share.
+1. "NFLX" is three different tokens: NFLXon is 10 Netflix shares per token, NFLXB is 1, and NFLXx is 1 or 10 depending on which endpoint you ask. StockGuard asks which one you mean instead of guessing. It also shows the price per share: $67.06, $71.30 and $67.59 for the same share in the recording. NFLXx's $71.30 is its last trade, from 2026-09-28 (F16); live, StockGuard leaves it out of the comparison.
 2. `check NFLXon --usd 1000` → `WARN`: the US market is closed and the quoted stock price is derived from the token price itself.
 3. An agent buying NFLXx → `REFUSE` on real data: the API gives two multipliers, and its supply (10,000) disagrees with the chain (100,000). No wallet command is emitted.
 4. KLACon → `CONFIRM` with the `baw` quote and swap commands. The wallet skill's mandatory token audit has no data for this token (or 662 others), so the user has to acknowledge. StockGuard puts its stock warnings into that same confirmation.
 5. "Sell when Netflix hits $75" → `baw limit-order sell --triggerPrice 750.00`. The trigger is per token, and NFLXon is 10 shares, so a $75 trigger would fire immediately. The gate also flags any trigger that is already met. The skill quotes an `Ondo-related tokens cannot be traded` error for limit orders; if the wallet rejects one, `trade` stops and never falls back to a market order.
 6. A token paused for a stock split → `REFUSE` (synthetic scenario token).
 7. The wallet's own `quotaLeft` is $250 → the order is cut from $500 to $250.
+8. A wallet quote for 10× the approved SELL (a token/share mix-up, F17; synthetic quote) → `REFUSE` before any swap.
 
 Every command also takes `--offline`, and `STOCKGUARD_OFFLINE=1` does the same.
 
@@ -130,7 +131,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 164 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 168 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

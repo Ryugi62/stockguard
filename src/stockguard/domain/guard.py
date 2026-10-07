@@ -43,6 +43,7 @@ class Snapshot:
     multiplier_known: bool = True            # False when the API sent no sharesMultiplier (1.0 is then an assumption)
     last_trade_age_h: Optional[float] = None # hours since the last K-line candle that carried volume (None = unknown)
     reference_source: Optional[str] = None   # symbol whose stock quote was borrowed when this token has none (bStocks)
+    reference_gap_bp: Optional[float] = None # token vs stock × multiplier, in basis points (shown with the pinned rule)
 
     @property
     def supply_mismatch(self) -> bool:
@@ -184,8 +185,10 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
         v.raise_to(WARN, f"You would sell {-p * 100:.1f}% below the reference price")
         v.add_risk(min(40, int(round((-p - premium_threshold) * 1000))))
     if s.reference_derived:
-        v.raise_to(WARN, "No independent stock price right now — the token price and the stock quote are pinned "
-                         "together (stock × multiplier = token), so any premium is invisible"); v.add_risk(15)
+        gap = f", within {abs(s.reference_gap_bp):.1f} bp" if s.reference_gap_bp is not None else ""
+        v.raise_to(WARN, f"No independent stock price right now — the token price and the stock quote are pinned "
+                         f"together outside regular hours (stock × multiplier = token{gap}), so any premium is invisible")
+        v.add_risk(15)
     elif s.reference_price is None and not s.multiplier_conflict:
         v.raise_to(WARN, "No reference price available"); v.add_risk(15)
 

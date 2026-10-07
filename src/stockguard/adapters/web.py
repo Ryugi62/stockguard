@@ -29,6 +29,8 @@ def check_response(guard, q, auditor=None):
             pass
         return 409, {"error": e.message(), "choices": e.candidates}
     except TickerNotFound as e:
+        if getattr(e, "reason", None):
+            return 404, {"error": e.reason, "suggestions": []}
         hint = f" Did you mean {', '.join(e.suggestions)}?" if e.suggestions else ""
         return 404, {"error": f"No tokenized stock found for '{ticker}'.{hint}", "suggestions": list(e.suggestions or [])}
     except ValueError as e:

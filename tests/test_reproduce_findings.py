@@ -55,7 +55,7 @@ def test_f12_bstock_stock_price_null():
 def test_f1_derived_reference_price():
     d = fx("dynamic_nflx_weekend.json")["data"]
     assert rf.check_f1(d)["reproduced"] is True
-    near = dict(d, stockInfo=dict(d["stockInfo"], price="67.0624"))          # within 5 bp, market closed -> near-copy
+    near = dict(d, stockInfo=dict(d["stockInfo"], price="67.2"))             # 20 bp, market closed -> pinned
     assert rf.check_f1(near)["reproduced"] is True
     far = dict(d, stockInfo=dict(d["stockInfo"], price="66.0"))               # 1.6% apart -> independent
     assert rf.check_f1(far)["reproduced"] is False

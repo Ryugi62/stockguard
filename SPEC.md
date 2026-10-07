@@ -90,7 +90,7 @@ Purpose: a judge or a non-crypto user opens a URL and gets the same answer as th
 ## UC-10 Staleness and data errors (2026-10-07)
 - Given the last K-line candle with volume closed 9 days ago, then BLOCK; 3–7 days, WARN with no premium; Ondo candles (volume always 0) say nothing.
 - Given a multiplier conflict and a token price > 25% off the reference for the multiplier the prices support, then BLOCK even without supply data.
-- Given an Ondo token outside regular hours whose stock price × multiplier is within 5 bp of the token price, then the reference is "not independent".
+- Given an Ondo token outside regular hours whose stock price × multiplier is within 50 bp of the token price, then the reference is "pinned" (not independent) and the gap is shown.
 
 ## Non-goals
 - No trading strategy, no PnL claims, no perps.

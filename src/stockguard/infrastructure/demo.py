@@ -80,6 +80,17 @@ def run_demo(guard: Guard, live: bool = False, out=print, auditor=None) -> None:
     q = gate_swap(guard, "AAPLon", 500, settings=parse_wallet_settings(SAMPLE_WALLET_SETTINGS), slippage=1.0)
     out(f"   → {q['action']}  (approved {_usd(q['approved_usd'])} of {_usd(q['requested_usd'])}): {q['reasons'][-1]}")
     out("")
+    out("")
+    out("8) The wallet's own quote is checked too (F17: baw reads a tokenized-stock SELL amount as SHARES).")
+    out("   Example (synthetic quote): the quote comes back for 10x the approved SELL — what a token/share mix-up produces:")
+    from stockguard.application.trade import apply_wallet_quote
+    sell = gate_swap(guard, "NFLXon", 100, side="SELL", auditor=auditor)
+    if sell.get("approved_token_qty"):
+        bad = {"success": True, "data": {"fromCoinAmount": f"{sell['approved_token_qty'] * 10 * 10:.6f}",
+                                         "toCoinAmount": f"{sell['approved_token_qty'] * 10 * sell['token_price']:.2f}"}}
+        chk = apply_wallet_quote(sell, bad)
+        out(f"   stockguard gate NFLXon --usd 100 --side SELL --quote-json quote.json  → {chk['action']}")
+        out(f"     · {chk['reasons'][-1]}")
     out("With a signed-in Agentic Wallet, `stockguard trade KLACon --usd 5` runs it end to end: preflight → gate →")
     out("the wallet's quote re-checked against the token price → your typed yes → swap → poll until FINISHED/FAILED.")
     out("Same checks as a web page: stockguard serve   ·   as MCP tools for agents: stockguard mcp")
