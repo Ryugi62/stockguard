@@ -30,7 +30,7 @@ def check_response(guard, q, auditor=None):
         return 409, {"error": e.message(), "choices": e.candidates}
     except TickerNotFound as e:
         hint = f" Did you mean {', '.join(e.suggestions)}?" if e.suggestions else ""
-        return 404, {"error": f"No tokenized stock found for '{ticker}'.{hint}"}
+        return 404, {"error": f"No tokenized stock found for '{ticker}'.{hint}", "suggestions": list(e.suggestions or [])}
     except ValueError as e:
         return 400, {"error": str(e)}
     except Exception as e:

@@ -106,8 +106,8 @@ class FakeBawLimit(FakeBaw):
             self.calls.append(" ".join(argv))
             if "--symbol" in argv:
                 return json.dumps({"success": True, "data": [{"symbol": "USDT", "balance": str(self.usdt), "price": "1.0"}]})
-            return json.dumps({"success": True, "data": [{"symbol": "NFLXon", "balance": str(self.token * MULT), "price": "67.0",
-                                                          "rawBalance": str(self.token), "rawPrice": "670", "multiplier": "10"}]})
+            # baw 1.10.0 --json: shares only (rawBalance/rawPrice/multiplier are dropped, dist/index.js)
+            return json.dumps({"success": True, "data": [{"symbol": "NFLXon", "balance": str(self.token * MULT), "price": "67.0"}]})
         if cmd == "cli-check":
             self.calls.append(" ".join(argv))
             return json.dumps({"success": True, "data": {"currentCliVersion": "1.10.0", "needUpdateCli": False}})
@@ -202,3 +202,26 @@ def test_gate_quote_json_applies_the_wallet_quote_check():
     r = apply_wallet_quote(g, bad)
     assert r["action"] == "REFUSE" and r["baw_commands"] == [] and "worse" in r["reasons"][-1]
     assert apply_wallet_quote(g, {"success": False})["action"] == "REFUSE"
+
+
+def test_sell_balance_in_shares_is_compared_in_tokens():
+    assert trade(FakeBawLimit(token=0.5), side="SELL", usd=100.0)["stage"] == "done"      # 0.5 tokens > 0.149
+    assert trade(FakeBawLimit(token=0.1), side="SELL", usd=100.0)["stage"] == "balance"   # 0.1 tokens < 0.149
+
+
+def test_quote_far_better_than_market_is_refused_as_a_unit_error():
+    from stockguard.domain.wallet_gate import check_quote
+    q = check_quote("SELL", 1.0, 670.62353 * 10, 670.62353)     # 10x the dollars for one token
+    assert q.level == "REFUSE" and "unit" in q.reason
+
+
+def test_quote_for_a_different_amount_stops_before_the_swap():
+    import json
+    class WrongSize(FakeBaw):
+        def __call__(self, argv):
+            if " ".join(argv[:2]) == "market-order quote":
+                return json.dumps({"success": True, "data": {"fromCoinAmount": "50", "toCoinAmount": str(50 / PRICE * MULT)}})
+            return super().__call__(argv)
+    fake = WrongSize()
+    r = trade(fake, usd=5.0)
+    assert r["stage"] == "quote" and "amount or its unit" in r["result"] and not any("swap" in c for c in fake.calls)

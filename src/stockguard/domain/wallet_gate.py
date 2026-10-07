@@ -48,6 +48,9 @@ class QuoteCheck:
     reason: str
 
 
+QUOTE_TOO_GOOD = 0.25        # a quote more than 25% better than the token price is refused
+
+
 def check_quote(side: str, from_amount: float, to_amount: float, token_price: float) -> QuoteCheck:
     """Re-gate on the wallet's own quote: effective price per token vs the API token price."""
     if from_amount <= 0 or to_amount <= 0 or token_price <= 0:
@@ -58,8 +61,12 @@ def check_quote(side: str, from_amount: float, to_amount: float, token_price: fl
     else:
         eff = to_amount / from_amount            # USD received per token sold
         gap = 1.0 - eff / token_price
-    level = REFUSE if gap > QUOTE_REFUSE_GAP else CONFIRM if gap > QUOTE_CONFIRM_GAP else PROCEED
     word = "pay" if side == "BUY" else "receive"
+    if gap < -QUOTE_TOO_GOOD:   # far "better" than the market is a unit or data error, not a bargain (F17)
+        return QuoteCheck(REFUSE, eff, gap, f"The wallet's quote would {word} ${eff:,.4f} per token, {-gap * 100:.0f}% "
+                                            f"better than the token price ${token_price:,.4f} — that is a unit or data "
+                                            f"error, not a bargain")
+    level = REFUSE if gap > QUOTE_REFUSE_GAP else CONFIRM if gap > QUOTE_CONFIRM_GAP else PROCEED
     return QuoteCheck(level, eff, gap, f"The wallet's quote would {word} ${eff:,.4f} per token, {gap * 100:+.1f}% "
                                        f"{'worse' if gap > 0 else 'better'} than the token price ${token_price:,.4f}")
 
@@ -156,3 +163,14 @@ def decide(verdict: Verdict, requested_usd: float, settings: Optional[WalletSett
             d.notes.append("The wallet auto-rejects transactions it flags as abnormal; StockGuard's warnings are "
                            "separate and are not seen by the wallet.")
     return d
+
+
+def check_quote_size(side: str, quoted_from: float, expected_from: float) -> Optional[str]:
+    """The quote must be for the order the gate approved (USD for a BUY, tokens for a SELL), within 5%."""
+    if expected_from <= 0:
+        return None
+    if abs(quoted_from / expected_from - 1.0) > 0.05:
+        unit = "USD" if side == "BUY" else "tokens"
+        return (f"The wallet quoted {quoted_from:,.6g} {unit}, but the approved order is {expected_from:,.6g} {unit} — "
+                f"stop: the amount or its unit is wrong")
+    return None

@@ -95,6 +95,12 @@ $("f").addEventListener("submit", async (e) => {
       document.querySelectorAll(".choice").forEach((b) => b.addEventListener("click", () => { $("t").value = b.dataset.s; $("f").requestSubmit(); }));
       return;
     }
+    if (r.status === 404 && d.suggestions && d.suggestions.length) {
+      $("out").innerHTML = `<div class="card"><div class="verdict">Did you mean…</div>
+        <div class="choices">${d.suggestions.map((x) => `<button type="button" class="choice" data-s="${esc(x)}"><b>${esc(x)}</b></button>`).join("")}</div></div>`;
+      document.querySelectorAll(".choice").forEach((b) => b.addEventListener("click", () => { $("t").value = b.dataset.s; $("f").requestSubmit(); }));
+      return;
+    }
     if (!r.ok) throw new Error(d.error || "Something went wrong");
     const naive = Math.abs(d.multiplier - 1) > 0.05 ? usd * d.multiplier : null;
     const perShare = d.multiplier && !d.multiplier_conflict ? d.token_price / d.multiplier : null;

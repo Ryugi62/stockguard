@@ -58,7 +58,7 @@ def _parser() -> argparse.ArgumentParser:
     order.add_argument("ticker"); order.add_argument("--usd", type=float, default=None)
     order.add_argument("--tokens", type=float, default=None, help="SELL size in tokens (instead of --usd)")
     order.add_argument("--side", default="BUY"); order.add_argument("--pay-with", default="USDT")
-    order.add_argument("--slippage", type=float, default=None, help="percent; omitted = the wallet's \"auto\"")
+    order.add_argument("--slippage", type=float, default=None, help="percent; omitted = capped at 1%% (not the wallet's \"auto\")")
     order.add_argument("--trigger-share-price", type=float, default=None,
                        help="limit order at this price per SHARE (converted to the per-token trigger)")
     order.add_argument("--no-audit", action="store_true",

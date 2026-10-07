@@ -88,10 +88,12 @@ def commands(gate: Dict) -> List[str]:
         side = "buy" if gate["side"] == "BUY" else "sell"
         a = _args(gate, limit=True)
         return [f"baw limit-order {side} --triggerPrice {_price(gate['trigger_token_price'])} {a}{_slip(gate)} --json",
-                "baw limit-order list --strategyId <strategyId from the order> --json   # placed is not filled; if it was "
-                "rejected, stop and ask — never a market order"]
-    return [f"baw market-order quote {a}{_slip(gate)} --json",
-            f"baw market-order swap {a}{_slip(gate)} --json",
+                "baw limit-order list --strategyId <strategyId from the order> --json   # placed is not filled (the list shows "
+                "the trigger per SHARE); if it was rejected, stop and ask — never a market order"]
+    unit = (f"   # {_floor(sell_shares(gate))} shares = {_floor(gate['approved_token_qty'])} {gate.get('symbol', '')} tokens "
+            f"(baw reads a tokenized-stock SELL amount as shares)") if gate["side"] == "SELL" else ""
+    return [f"baw market-order quote {a}{_slip(gate)} --json{unit}",
+            f"baw market-order swap {a}{_slip(gate)} --json{unit}",
             "baw market-order list --orderId <orderId from the swap> --json   # repeat until status is FINISHED or FAILED"]
 
 
@@ -153,11 +155,10 @@ class AgenticWallet:
         return float(rows[0]["price"]) if rows else None
 
     def balance(self, contract):
-        """Token units. For tokenized stocks baw reports `balance` in shares and the token amount as `rawBalance`."""
+        """As baw prints it: for a tokenized stock `balance` is in SHARES — with --json, baw 1.10.0 drops rawBalance,
+        rawPrice and multiplier (dist/index.js, F17). The caller converts with the gate's wallet_multiplier."""
         rows = self._data(self.baw(f"baw wallet balance --tokenAddress {contract} --binanceChainId 56 --json")) or []
-        if not rows:
-            return 0.0
-        return float(rows[0].get("rawBalance") or rows[0]["balance"])
+        return float(rows[0]["balance"]) if rows else 0.0
 
     def pay_balance(self, symbol):
         """None when the wallet doesn't answer (the swap will then fail on its own)."""

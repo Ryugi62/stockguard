@@ -84,3 +84,12 @@ def test_compare_leaves_a_stale_price_out_of_the_spread():
     rows = Guard(Stale(), to_snapshot, clock=lambda: 1791349200.0).compare("NFLX")
     x = [r for r in rows if r["symbol"] == "NFLXx"][0]
     assert x["stale_price"] is True and x["per_share_spread"] is None and x["verdict"] == "BLOCK"
+
+
+def test_bstock_without_a_stock_quote_borrows_the_shared_feed():
+    from stockguard.adapters.mapping import to_snapshot
+    from stockguard.application.service import Guard
+    from test_issuers import ThreeIssuers
+    r = Guard(ThreeIssuers(), to_snapshot).check("NFLXB", usd_amount=100)
+    assert r["reference_source"] in ("NFLXon", "NFLXx") and r["stock_price"] and r["premium"] is not None
+    assert any("shared across issuers" in n for n in r["data_notes"] + r["notes"])

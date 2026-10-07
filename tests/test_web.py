@@ -51,3 +51,9 @@ def test_check_response_non_numeric_amount_is_plain_english():
     from stockguard.adapters.web import check_response
     code, body = check_response(Guard(FakeClient(), to_snapshot), {"ticker": "NFLXon", "usd": "abc"})
     assert code == 400 and "number" in body["error"] and "float" not in body["error"]
+
+
+def test_unknown_ticker_returns_clickable_suggestions():
+    from stockguard.adapters.web import check_response
+    code, body = check_response(Guard(FakeClient(), to_snapshot), {"ticker": "NFLXO"})
+    assert code == 404 and isinstance(body["suggestions"], list)

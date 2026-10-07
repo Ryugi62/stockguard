@@ -74,8 +74,8 @@ Each rule follows the official skill text (`binance-skills-hub` commit `9960c675
 | "an orderId is NOT a completed swap — poll to a terminal state" (references/market-order.md) | the third command is the `market-order list --orderId` poll until `FINISHED` / `FAILED` |
 | `wallet settings` → `quotaLeft`, `tradeAllTokens`, `quotaDate` (references/wallet-setting.md) | `--wallet-settings` takes that JSON as is (`trade` reads it live); flags settings from another day |
 | `wallet status` → `CONNECTED`, `cli-check --required-version 1.10.0` (references/wallet-view.md, preflight.md) | `trade` stops at preflight unless the wallet is connected and the CLI is new enough; BUY checks the pay-token balance and SELL the token balance first; an order still PENDING after polling is reported as "still processing", never as done |
-| `baw` 1.10.0 itself (installed locally, not signed in) | flags checked against the real `--help` (`fixtures/baw/cli-1.10.0-help.txt`); real `UNCONNECTED` / `NOT_LOGGED_IN` responses are test fixtures |
-| `baw` 1.10.0's own code (`dist/index.js` of the published package, read, not run — F17): for tokenized stocks a market-order SELL amount, a BUY quote's `toCoinAmount` and `wallet balance` are in **shares**; limit orders are sent in token units | a market SELL's `--fromTokenQty` is tokens × the multiplier baw uses (its `scaleui/list`, equal to `list/ai` for all 675 tokens); the quote re-check and the SELL balance check convert back to tokens (`rawBalance`); limit orders stay in token units |
+| `baw` 1.10.0 itself (installed on 2026-10-04 for these fixtures, not signed in; not installed on the machine used for `docs/agent-run-2026-10-07.md`) | flags checked against the real `--help` (`fixtures/baw/cli-1.10.0-help.txt`); real `UNCONNECTED` / `NOT_LOGGED_IN` responses are test fixtures |
+| `baw` 1.10.0's own code (`dist/index.js` of the published package, read, not run — F17): for tokenized stocks a market-order SELL amount, a BUY quote's `toCoinAmount` and `wallet balance` are in **shares**; limit orders are sent in token units | a market SELL's `--fromTokenQty` is tokens × the multiplier baw uses (its `scaleui/list`, equal to `list/ai` for all 675 tokens); the quote re-check and the SELL balance check convert back to tokens (with `--json`, baw drops `rawBalance`, so the share balance is divided by the multiplier); a quote for a different amount, or more than 25% *better* than the market (a unit error), stops the order; limit orders stay in token units |
 | the wallet's quote, when an agent runs the commands itself | `gate --quote-json quote.json` re-gates on the saved `baw market-order quote --json` output: > 1% worse → `CONFIRM`, > 5% → `REFUSE` with no commands (the same check `trade` runs) |
 
 ## What it checks (domain rules, `src/stockguard/domain/guard.py`)
@@ -96,7 +96,7 @@ Each rule follows the official skill text (`binance-skills-hub` commit `9960c675
 
 Scans of every BSC stock token: 2026-10-03 (Ondo, 458 tokens, 7.4 s) and 2026-10-04 (all three issuers, 675 tokens, 13.8 s, 0 request errors).
 
-- 432 of 458 Ondo tokens reported a weekend "stock price" equal to the token price ÷ multiplier, so premium checks read 0%.
+- 432 of 458 Ondo tokens reported a weekend "stock price" exactly equal to the token price ÷ multiplier: the two are pinned together, so premium checks read 0%. The stock quote itself is one feed shared across issuers (identical for 85 of 86 multi-issuer tickers, 2026-10-07); StockGuard lends it to bStocks, which carry none.
 - xStocks and bStocks reported `marketStatus: null` and `reasonCode: TRADING` for all 217 tokens on a Sunday. At the same moment Ondo reported 426 `closed`, 31 `offhours` and 1 `regular` (USDY).
 - For 39 of 130 xStocks, the token list and the price feed give different multipliers: NFLXx 1 vs 10, CRWDx 1 vs 4, TQQQx 1 vs 2.01, AZNx 1 vs 0.51. The supply is off by the same factor: NFLXx totalSupply on chain 100,000 vs API 10,000. 77 of 130 xStocks had no token price.
 - NFLXx's token price came back as the same 38-digit string on Sunday 2026-10-04 and Wednesday 2026-10-07, while the stock moved from $67.06 to $69.16. Nothing in the payload marks it stale (F16). The BSC price feed's NFLXx multiplier (10) equals the Solana entry's, not the BSC entry's (1).
@@ -130,7 +130,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 160 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 164 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

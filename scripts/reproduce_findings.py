@@ -192,7 +192,7 @@ SCREENS = [
     ("F9", "xStocks and bStocks report no market session",
      [DYNAMIC.format(a=NFLXX), DYNAMIC.format(a=NFLXB)], lambda s: check_f9(s.dynamic(NFLXX), s.dynamic(NFLXB))),
     ("F12", "bStocks carry no underlying stock price", [DYNAMIC.format(a=NFLXB)], lambda s: check_f12(s.dynamic(NFLXB))),
-    ("F1", "Ondo outside regular hours: stock price x multiplier = token price (not two independent prices)",
+    ("F1", "Ondo outside regular hours: token price and stock quote are pinned together (stock x multiplier = token)",
      [DYNAMIC.format(a=NFLXON)], lambda s: check_f1(s.dynamic(NFLXON))),
     ("F2", "Market status carries fields and values that are not documented", [MARKET], lambda s: check_f2(s.market())),
     ("F7", "Ondo K-line volume is always 0 (xStocks and bStocks candles do carry volume)",

@@ -8,7 +8,7 @@ from typing import Callable, Dict, List, Optional, Protocol, Tuple
 
 from stockguard.application.service import Guard
 from stockguard.application.wallet_gate import gate_swap
-from stockguard.domain.wallet_gate import ASK, REFUSE, WalletSettings, check_quote
+from stockguard.domain.wallet_gate import ASK, REFUSE, WalletSettings, check_quote, check_quote_size
 
 
 class WalletPort(Protocol):
@@ -41,6 +41,11 @@ def _quote_in_tokens_and_usd(gate, frm, to, pay_price):
     return frm, to
 
 
+def _size_problem(gate, frm):
+    expected = gate["approved_usd"] if gate["side"] == "BUY" else gate["approved_token_qty"]
+    return check_quote_size(gate["side"], frm, expected)
+
+
 def apply_wallet_quote(gate: Dict, raw_quote: Dict, pay_price: Optional[float] = None) -> Dict:
     """`gate --quote-json`: the same wallet-quote check `trade` runs, for an agent that runs the commands itself.
     > 5% worse -> REFUSE (no commands); > 1% worse -> at least CONFIRM."""
@@ -55,6 +60,11 @@ def apply_wallet_quote(gate: Dict, raw_quote: Dict, pay_price: Optional[float] =
         out["reasons"].append(f"The wallet quote can't be read ({e}) — get a fresh one before swapping")
         return out
     frm, to = _quote_in_tokens_and_usd(out, frm, to, pay_price)
+    size = _size_problem(out, frm)
+    if size:
+        out.update(action=REFUSE, baw_commands=[], approved_usd=0.0)
+        out["reasons"].append(size)
+        return out
     q = check_quote(out["side"], frm, to, out["token_price"])
     out["quote_check"] = {"level": q.level, "reason": q.reason, "from": frm, "to": to}
     if q.level == REFUSE:
@@ -88,6 +98,9 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
     newer = wallet.skill_update("1.12.0") if hasattr(wallet, "skill_update") else None
     settings = wallet.settings()
     pay_price = wallet.price("BNB") if pay_with.upper() == "BNB" else None   # BUY sizing and SELL quote check
+    if pay_with.upper() == "BNB" and not pay_price:
+        return {"stage": "preflight", "result": "The wallet shows no BNB price (it lists only tokens you hold) — "
+                                                "pay with USDT, or hold some BNB first"}
     gate = gate_swap(guard, ticker, usd_amount, side=side, pay_with=pay_with, settings=settings, auditor=auditor,
                      slippage=slippage, trigger_share_price=trigger_share_price, pay_price=pay_price, today=today,
                      token_qty=token_qty)
@@ -105,8 +118,8 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
         if have is not None and have + 1e-9 < need:
             return {"stage": "balance", "gate": gate, "result": f"Wallet holds {have:g} {gate['pay_with']}, "
                                                                  f"less than the {need:g} this order needs"}
-    if gate["side"] == "SELL":
-        held = wallet.balance(gate["contract"])
+    if gate["side"] == "SELL":   # `baw wallet balance --json` reports a tokenized stock in SHARES (rawBalance is dropped)
+        held = wallet.balance(gate["contract"]) / (gate.get("wallet_multiplier") or 1.0)
         if held + 1e-12 < gate["approved_token_qty"]:
             return {"stage": "balance", "gate": gate, "result": f"Wallet holds {held:g} {gate['symbol']}, "
                                                                  f"less than the {gate['approved_token_qty']:g} to sell"}
@@ -130,6 +143,9 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
     except (KeyError, TypeError, ValueError) as e:
         return {"stage": "quote", "gate": gate, "result": f"No usable quote from the wallet — {e}"}
     frm, to = _quote_in_tokens_and_usd(gate, frm, to, pay_price)
+    size = _size_problem(gate, frm)
+    if size:
+        return {"stage": "quote", "gate": gate, "quote": {"from": frm, "to": to}, "result": size}
     q = check_quote(gate["side"], frm, to, gate["token_price"])
     summary = {"gate": gate, "quote": {"from": frm, "to": to, "check": q.level, "reason": q.reason}}
     if q.level == REFUSE:

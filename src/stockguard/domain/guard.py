@@ -42,6 +42,7 @@ class Snapshot:
     api_supply: Optional[float] = None       # circulatingSupply as the API reports it
     multiplier_known: bool = True            # False when the API sent no sharesMultiplier (1.0 is then an assumption)
     last_trade_age_h: Optional[float] = None # hours since the last K-line candle that carried volume (None = unknown)
+    reference_source: Optional[str] = None   # symbol whose stock quote was borrowed when this token has none (bStocks)
 
     @property
     def supply_mismatch(self) -> bool:
@@ -159,11 +160,11 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
 
     age = s.last_trade_age_h
     if age is not None and age > STALE_BLOCK_H:
-        v.raise_to(BLOCK, f"No on-chain trade for {age / 24:.0f} days — the token price is that old last trade, not a "
-                          f"market price"); v.add_risk(100)
+        v.raise_to(BLOCK, f"No trade in Binance's price history (K-line) for {age / 24:.0f} days — the token price is "
+                          f"that old last trade, not a market price"); v.add_risk(100)
     elif age is not None and age > STALE_WARN_H:
-        v.raise_to(WARN, f"Last on-chain trade was {age / 24:.0f} days ago — the token price may be stale, so no premium "
-                         f"is computed"); v.add_risk(30)
+        v.raise_to(WARN, f"Last trade in Binance's price history (K-line) was {age / 24:.0f} days ago — the token price "
+                         f"may be stale, so no premium is computed"); v.add_risk(30)
     stale = age is not None and age > STALE_WARN_H
     if stale:
         v.premium = None
@@ -183,8 +184,8 @@ def check_trade(s: Snapshot, side: str, token_qty: float, premium_threshold: flo
         v.raise_to(WARN, f"You would sell {-p * 100:.1f}% below the reference price")
         v.add_risk(min(40, int(round((-p - premium_threshold) * 1000))))
     if s.reference_derived:
-        v.raise_to(WARN, "No independent stock price right now — the quoted stock price is just the token price "
-                         "divided by the multiplier, so any premium is invisible"); v.add_risk(15)
+        v.raise_to(WARN, "No independent stock price right now — the token price and the stock quote are pinned "
+                         "together (stock × multiplier = token), so any premium is invisible"); v.add_risk(15)
     elif s.reference_price is None and not s.multiplier_conflict:
         v.raise_to(WARN, "No reference price available"); v.add_risk(15)
 

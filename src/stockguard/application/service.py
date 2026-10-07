@@ -53,10 +53,10 @@ def _f(x) -> Optional[float]:
 def last_trade_age_hours(klines: List, now_s: float) -> Optional[float]:
     """Hours since the close of the last K-line candle, if the candles are trade-derived (some volume > 0).
     Ondo candles always carry volume 0 (F7), so they say nothing about the last trade -> None."""
-    rows = [k for k in klines or [] if isinstance(k, (list, tuple)) and len(k) > 6]
-    if not rows or not any((_f(k[5]) or 0) > 0 for k in rows):
+    traded = [k for k in klines or [] if isinstance(k, (list, tuple)) and len(k) > 6 and (_f(k[5]) or 0) > 0]
+    if not traded:
         return None
-    return max(0.0, (now_s * 1000 - float(rows[-1][6])) / 3.6e6)
+    return max(0.0, (now_s * 1000 - float(traded[-1][6])) / 3.6e6)
 
 
 class Guard:
@@ -153,12 +153,31 @@ class Guard:
                     notes.append(f"{s.symbol}: API circulatingSupply {api:,.4f} != on-chain totalSupply {supply:,.4f}")
             except Exception as e:  # chain read is a bonus; never fail the check on it
                 notes.append(f"{s.symbol}: on-chain read failed ({type(e).__name__})")
+        if s.stock_price is None and s.token_price:      # bStocks carry no stock quote (F12): the feed is shared
+            s = self._borrow_reference(t, s, notes)        # across issuers (85/86 tickers identical, 2026-10-07)
         try:                        # Market API K-line: when did this token last trade on-chain? (F16)
             kl = self.client.kline(t["contractAddress"], "1d", 10, self.chain_id) if hasattr(self.client, "kline") else []
             s = dataclasses.replace(s, last_trade_age_h=last_trade_age_hours(kl, self.clock()))
         except Exception as e:      # a bonus signal; never fail the check on it
             notes.append(f"{s.symbol}: K-line read failed ({type(e).__name__})")
         return s, notes
+
+    def _borrow_reference(self, t: Dict, s: Snapshot, notes: List[str]) -> Snapshot:
+        ticker = str(t.get("ticker") or "").lower()
+        for other in self.tokens():
+            if other is t or str(other.get("ticker") or "").lower() != ticker or \
+                    other.get("contractAddress", "").lower() == t.get("contractAddress", "").lower():
+                continue
+            try:
+                price = _f(((self.client.dynamic(other["contractAddress"], self.chain_id) or {}).get("stockInfo") or {})
+                           .get("price"))
+            except Exception:
+                continue
+            if price:
+                notes.append(f"{s.symbol}: no stock quote of its own; using the {t.get('ticker')} quote from "
+                             f"{other.get('symbol')} (the stock feed is shared across issuers)")
+                return dataclasses.replace(s, stock_price=price, reference_source=other.get("symbol"))
+        return s
 
     def check(self, query: str, side: str = "BUY", token_qty: Optional[float] = None, premium_threshold: float = 0.01,
               usd_amount: Optional[float] = None) -> Dict:
@@ -247,6 +266,7 @@ def render(s: Snapshot, v: Verdict, side: str, qty: float) -> Dict:
         "reference_price": v.reference_price, "premium": v.premium,
         "reference_derived": s.reference_derived,
         "next_open_ms": s.next_open_ms, "last_trade_age_h": s.last_trade_age_h,
+        "reference_source": s.reference_source, "effective_multiplier": s.effective_multiplier,
         "session": s.session, "status": s.status, "reason": s.reason, "market_session": s.market_session,
         "checked_at": int(time.time()),
     }
