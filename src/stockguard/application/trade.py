@@ -119,7 +119,10 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
             return {"stage": "balance", "gate": gate, "result": f"Wallet holds {have:g} {gate['pay_with']}, "
                                                                  f"less than the {need:g} this order needs"}
     if gate["side"] == "SELL":   # `baw wallet balance --json` reports a tokenized stock in SHARES (rawBalance is dropped)
-        held = wallet.balance(gate["contract"]) / (gate.get("wallet_multiplier") or 1.0)
+        try:
+            held = wallet.balance(gate["contract"]) / (gate.get("wallet_multiplier") or 1.0)
+        except ValueError as e:
+            return {"stage": "balance", "gate": gate, "result": f"Could not read the wallet balance — {e}"}
         if held + 1e-12 < gate["approved_token_qty"]:
             return {"stage": "balance", "gate": gate, "result": f"Wallet holds {held:g} {gate['symbol']}, "
                                                                  f"less than the {gate['approved_token_qty']:g} to sell"}
@@ -161,6 +164,9 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
         except (KeyError, TypeError, ValueError) as e:
             return {"stage": "quote", **summary, "result": f"Re-quote failed — {e}"}
         frm2, to2 = _quote_in_tokens_and_usd(gate, frm2, to2, pay_price)
+        size2 = _size_problem(gate, frm2)          # the re-quote gets the same unit-error guard as the first quote
+        if size2:
+            return {"stage": "quote", **summary, "result": "Re-quote: " + size2}
         q2 = check_quote(gate["side"], frm2, to2, gate["token_price"])
         if q2.level == REFUSE:
             return {"stage": "quote", **summary, "result": "The price moved after confirmation: " + q2.reason}

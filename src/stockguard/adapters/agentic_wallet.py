@@ -97,6 +97,12 @@ def commands(gate: Dict) -> List[str]:
             "baw market-order list --orderId <orderId from the swap> --json   # repeat until status is FINISHED or FAILED"]
 
 
+class BawExit(Exception):
+    def __init__(self, code: int, message: str):
+        super().__init__(message)
+        self.code, self.message = code, message
+
+
 class BawRunner:
     """Runs `baw … --json` and returns the parsed JSON. Used by `stockguard trade`; StockGuard itself never signs —
     the wallet does, under its own limits."""
@@ -108,7 +114,10 @@ class BawRunner:
         if not shutil.which(self.binary):
             raise FileNotFoundError("baw CLI not found — npm install -g @binance/agentic-wallet, then baw auth signin")
         p = subprocess.run([self.binary] + argv, capture_output=True, text=True, timeout=60)
-        return p.stdout or p.stderr
+        out = p.stdout or p.stderr
+        if p.returncode != 0 and not out.lstrip().startswith("{"):
+            raise BawExit(p.returncode, (p.stderr or p.stdout or "").strip()[:500])
+        return out
 
     def __call__(self, command: str) -> Dict:
         argv = command.split("#")[0].split()[1:]          # drop the leading "baw" and any trailing comment
@@ -116,6 +125,8 @@ class BawRunner:
             out = self._run(argv)
         except FileNotFoundError as e:
             return {"success": False, "error": {"name": "BAW_NOT_FOUND", "message": str(e)}}
+        except BawExit as e:
+            return {"success": False, "error": {"name": f"BAW_EXIT_{e.code}", "message": e.message}}
         except subprocess.TimeoutExpired:
             return {"success": False, "error": {"name": "TIMEOUT", "message": "baw did not answer within 60 s — the "
                     "order may have been submitted; check `baw market-order list` before retrying"}}
@@ -157,7 +168,10 @@ class AgenticWallet:
     def balance(self, contract):
         """As baw prints it: for a tokenized stock `balance` is in SHARES — with --json, baw 1.10.0 drops rawBalance,
         rawPrice and multiplier (dist/index.js, F17). The caller converts with the gate's wallet_multiplier."""
-        rows = self._data(self.baw(f"baw wallet balance --tokenAddress {contract} --binanceChainId 56 --json")) or []
+        r = self.baw(f"baw wallet balance --tokenAddress {contract} --binanceChainId 56 --json")
+        if not (isinstance(r, dict) and r.get("success") is not False and "data" in r):
+            raise ValueError(self.error(r))           # an unreadable balance is not a zero balance
+        rows = r.get("data") or []
         return float(rows[0]["balance"]) if rows else 0.0
 
     def pay_balance(self, symbol):

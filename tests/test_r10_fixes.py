@@ -48,7 +48,7 @@ def test_next_step_for_a_warned_buy_says_how_to_buy_this_amount():
     assert s["wallet_url"] == WALLET_URL and s["copy"] == NFLXON
     text = " ".join(s["steps"])
     assert NFLXON in text and "0.1491 tokens" in text and "1.491 NFLX shares" in text
-    assert s["steps"][0].startswith("Read the warning")          # WARN: the warning comes before the buy steps
+    assert s["caution"].startswith("Read the warning") and not s["steps"][0].startswith("Read")   # WARN: said once, above the steps
     assert s["agent_command"] == "stockguard trade NFLXon --usd 100"
 
 
@@ -60,7 +60,7 @@ def test_next_step_for_a_block_is_wait_with_no_buy_button():
 
 def test_next_step_for_an_allowed_sell():
     s = next_step("ALLOW", "NFLXB", "NFLX", "0xdef", "SELL", 50.0, 0.7, 0.7)
-    assert s["kind"] == "sell" and s["button"] == "Sell $50 of NFLXB" and not s["steps"][0].startswith("Read")
+    assert s["kind"] == "sell" and s["button"] == "Sell $50 of NFLXB" and s["caution"] is None
 
 
 def test_check_response_carries_the_next_step():
@@ -115,3 +115,61 @@ def test_recorded_quote_check_has_no_mismatch():
     text = open(path, encoding="utf-8").read()
     assert "9960c675" in text and "| no |" not in text
     assert len(re.findall(r"\| yes \|", text)) >= 12
+
+
+def test_page_keeps_agent_and_cli_lines_out_of_the_consumer_view():
+    html = open(os.path.join(ROOT, "src", "stockguard", "web", "index.html"), encoding="utf-8").read()
+    i = html.index("<details class=\"dev\">")
+    assert html.index("If an AI agent placed this order") > i and html.index("Agents: <code>stockguard gate") > i
+    assert "plain(" in html and "bp\\)" in html          # the bp detail is cut from the reasons a person reads
+
+
+# --- R10 judge fixes: error handling ----------------------------------------------------------------------------
+
+def test_requote_for_a_different_amount_stops_before_the_swap():
+    import json as _j
+    from test_trade import FakeBaw, PRICE, MULT
+    from stockguard.adapters.agentic_wallet import AgenticWallet, BawRunner
+    from stockguard.application.trade import run_guarded_trade
+
+    class TenX(FakeBaw):
+        n = 0
+        def __call__(self, argv):
+            if " ".join(argv[:2]) == "market-order quote":
+                TenX.n += 1
+                qty = float(argv[argv.index("--fromTokenQty") + 1])
+                k = 1 if TenX.n == 1 else 10                     # the re-quote is for 10x the approved amount
+                return _j.dumps({"success": True, "data": {"fromCoinAmount": str(qty * k),
+                                                           "toCoinAmount": str(qty * k / PRICE * 0.998 * MULT)}})
+            return super().__call__(argv)
+    baw = TenX()
+    clock = iter([0.0, 100.0])
+    r = run_guarded_trade(Guard(FakeClient(), to_snapshot), AgenticWallet(BawRunner(run=baw)), "NFLXon", 5.0,
+                          confirm=lambda s: True, sleep=lambda s: None, today="2026-10-04",
+                          clock=lambda: next(clock, 100.0))
+    assert r["stage"] == "quote" and r["result"].startswith("Re-quote")
+    assert not any(c.startswith("market-order swap") for c in baw.calls)
+
+
+def test_baw_nonzero_exit_without_json_is_an_error_with_the_exit_code(monkeypatch):
+    import subprocess as sp
+    from stockguard.adapters import agentic_wallet as aw
+    monkeypatch.setattr(aw.shutil, "which", lambda b: "/usr/bin/baw")
+    monkeypatch.setattr(aw.subprocess, "run", lambda *a, **k: sp.CompletedProcess(a, 3, stdout="", stderr="boom"))
+    r = aw.BawRunner()("baw wallet status --json")
+    assert r["success"] is False and r["error"]["name"] == "BAW_EXIT_3" and "boom" in r["error"]["message"]
+
+
+def test_unreadable_balance_is_not_reported_as_zero():
+    import json as _j
+    import pytest
+    from stockguard.adapters.agentic_wallet import AgenticWallet, BawRunner
+    w = AgenticWallet(BawRunner(run=lambda argv: _j.dumps({"success": False, "error": {"name": "NOT_LOGGED_IN"}})))
+    with pytest.raises(ValueError):
+        w.balance("0xabc")
+
+
+def test_audit_with_an_error_code_is_unavailable():
+    from stockguard.adapters.token_audit import parse_audit
+    a = parse_audit({"code": "100001", "data": {"hasResult": True, "isSupported": True, "riskLevel": 0}})
+    assert a.available is False and "100001" in (a.error or "")

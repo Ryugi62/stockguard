@@ -21,7 +21,7 @@ def next_step(verdict: str, symbol: str, ticker: str, contract: str, side: str, 
     side = (side or "BUY").upper()
     if verdict == "BLOCK":
         return {"kind": "wait", "title": f"Don't {side.lower()} {symbol} now — check again later",
-                "button": None, "wallet_url": None, "copy": None, "agent_command": None,
+                "button": None, "wallet_url": None, "copy": None, "agent_command": None, "caution": None,
                 "steps": ["Nothing to do in your wallet: the reasons above mean an order could fill at a wrong price "
                           "or not at all.",
                           "Check again when the reason is gone (see the next trading session above, if shown)."]}
@@ -37,9 +37,8 @@ def next_step(verdict: str, symbol: str, ticker: str, contract: str, side: str, 
              f"'{ticker}' can mean several tokens with different terms.",
              pay,
              "On the confirm screen, check the address and the amount once more, then confirm."]
-    if verdict == "WARN":
-        steps.insert(0, "Read the warning above first. If you still want to go ahead:")
+    caution = "Read the warning above first. If you still want to go ahead:" if verdict == "WARN" else None
     cmd = f"stockguard trade {symbol} --usd {('%.2f' % usd).rstrip('0').rstrip('.')}" if usd else None
     return {"kind": side.lower(), "title": f"{verb} {amount} {symbol}",
             "button": f"{verb} {amount} {symbol}", "wallet_url": WALLET_URL, "copy": contract,
-            "agent_command": cmd, "steps": steps}
+            "agent_command": cmd, "steps": steps, "caution": caution}

@@ -29,6 +29,9 @@ def _num(x) -> Optional[float]:
 
 
 def parse_audit(raw: Optional[Dict]) -> AuditResult:
+    code = (raw or {}).get("code")
+    if code not in (None, "000000"):
+        return AuditResult(available=False, error=f"audit API code {code}")
     d = (raw or {}).get("data") or {}
     if not (d.get("hasResult") and d.get("isSupported")):
         return AuditResult(available=False)      # skill: do NOT show riskLevel / riskItems in this case

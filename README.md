@@ -62,7 +62,7 @@ Three clicks from a question to the wallet: **Check** → pick which NFLX you me
 | Web page | non-crypto users ("Why can't I buy NFLX right now?") | `stockguard serve` → http://127.0.0.1:8787 |
 | CLI / library | bots, scripts | `stockguard check NFLXon --usd 1000` · `stockguard compare NFLX` (per-issuer terms and per-share prices) |
 
-Exit codes, so scripts and agents can branch without parsing JSON: `gate` 0 PROCEED · 10 CONFIRM · 11 ASK · 12 REFUSE; `check` 0 ALLOW · 10 WARN · 12 BLOCK; `trade` 0 finished or limit placed · 3 still processing · 1 stopped before or at the wallet. 1 and 2 also mean error / bad arguments.
+Exit codes, so scripts and agents can branch without parsing JSON: `gate` 0 PROCEED · 10 CONFIRM · 11 ASK · 12 REFUSE; `check` 0 ALLOW · 10 WARN · 12 BLOCK; `trade` 0 finished or limit placed · 3 still processing · 1 stopped before or at the wallet. 1 also means an error (including an invalid amount); 2 means an unknown flag.
 
 ## The Agentic Wallet gate (`src/stockguard/domain/wallet_gate.py`)
 
@@ -124,7 +124,7 @@ How the two headline numbers are counted:
 
 - 432 of 458 Ondo tokens reported a weekend "stock price" exactly equal to the token price ÷ multiplier: the two are pinned together, so premium checks read 0%. The stock quote itself is one feed shared across issuers (identical for 85 of 86 multi-issuer tickers, 2026-10-07); StockGuard lends it to bStocks, which carry none.
 - xStocks and bStocks reported `marketStatus: null` and `reasonCode: TRADING` for all 217 tokens on a Sunday. At the same moment Ondo reported 426 `closed`, 31 `offhours` and 1 `regular` (USDY).
-- For 39 of 130 xStocks, the token list and the price feed give different multipliers: NFLXx 1 vs 10, CRWDx 1 vs 4, TQQQx 1 vs 2.01, AZNx 1 vs 0.51. The supply is off by the same factor: NFLXx totalSupply on chain 100,000 vs API 10,000. 77 of 130 xStocks had no token price.
+- For 39 of 130 xStocks, the token list and the price feed give different multipliers: NFLXx 1 vs 10, CRWDx 1 vs 4, TQQQx 1 vs 2.01, AZNx 1 vs 0.51. Those four are unit-size gaps; the other 35 are within 10% (e.g. ABBVx 1 vs 1.022). StockGuard flags anything over 1% the same way, so for those 35 a `CONFIRM` is cautious rather than a sign of a 10× error. The supply is off by the same factor: NFLXx totalSupply on chain 100,000 vs API 10,000. 77 of 130 xStocks had no token price.
 - NFLXx's token price came back as the same 38-digit string on Sunday 2026-10-04 and Wednesday 2026-10-07, while the stock moved from $67.06 to $69.16. Nothing in the payload marks it stale (F16). The BSC price feed's NFLXx multiplier (10) equals the Solana entry's, not the BSC entry's (1).
 - The token security audit that the Agentic Wallet skill requires before every swap returned `hasResult: false, isSupported: false` for 663 of 675 stock tokens: all 458 Ondo, all 130 xStocks, 75 of 87 bStocks. The 12 bStocks with data were all `riskLevel 0`. USDT came back `riskLevel 3`. Raw: `data/audit-all-20261004.jsonl` (`scripts/audit_sample.py --n 0`).
 - 38 tickers exist under all three issuers, with different terms. NFLX is 10 shares per token on Ondo and 1 on bStocks. CRWD is 4 and 1.
@@ -156,7 +156,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 179 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 184 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

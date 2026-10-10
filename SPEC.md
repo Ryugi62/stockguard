@@ -47,7 +47,7 @@ Ubiquitous language: **Gate action** — `PROCEED | CONFIRM | ASK | REFUSE`. **W
 - Given verdict WARN with risk ≥ 40, then action = CONFIRM and `confirmation_required` = true (it can't be skipped). Given WARN below 40, then PROCEED with the reasons as heads-up notes.
 - Given the token audit is unavailable (hasResult or isSupported false) or unreachable, then CONFIRM with the skill's exact sentence. Given riskLevel 5 or a tax above 10%, then REFUSE.
 - Given a limit order at $75 per share on a 10-share token, then `--triggerPrice 750.00`. Given a disputed multiplier, then REFUSE.
-- Given no slippage, then a note discloses "auto". Given an order under $1, then REFUSE. quotaLeft is rounded down to the cent.
+- Given no slippage, then the swap is capped at 1% (not the wallet's "auto") and a note says so. Given an order under $1, then REFUSE. quotaLeft is rounded down to the cent.
 - Given verdict ALLOW and no wallet limits, then action = PROCEED.
 - Given quotaLeft 120 and an order of 500, then action = CONFIRM and approved USD = 120. Given quotaLeft 0, then REFUSE.
 - Given a bare ticker held by several issuers, then action = ASK with the candidates, and no command.
