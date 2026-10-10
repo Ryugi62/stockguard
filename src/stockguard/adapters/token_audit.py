@@ -10,8 +10,9 @@ from typing import Callable, Dict, Optional
 from stockguard.domain.wallet_gate import AuditResult
 
 AUDIT_URL = "https://web3.binance.com/bapi/defi/v1/public/wallet-direct/security/token/audit"
+USER_AGENT = "StockGuard/0.5 (+https://github.com/Ryugi62/stockguard) binance-web3/1.4 (Skill)"
 HEADERS = {"Content-Type": "application/json", "source": "agent", "Accept-Encoding": "identity",
-           "User-Agent": "binance-web3/1.4 (Skill)"}
+           "User-Agent": USER_AGENT}
 
 
 def urllib_post(url: str, payload: Dict, timeout: float = 8.0) -> Dict:

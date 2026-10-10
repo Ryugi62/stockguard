@@ -92,6 +92,13 @@ Purpose: a judge or a non-crypto user opens a URL and gets the same answer as th
 - Given a multiplier conflict and a token price > 25% off the reference for the multiplier the prices support, then BLOCK even without supply data.
 - Given an Ondo token outside regular hours whose stock price × multiplier is within 50 bp of the token price, then the reference is "pinned" (not independent) and the gap is shown.
 
+## UC-11 Next step after a verdict (`domain/next_step.py`, web page) — 2026-10-10
+- Given a verdict ALLOW or WARN for a dollar amount, When the page shows it, Then one button "Buy $X of SYMBOL" opens the steps to place exactly that order in Binance Wallet (find the token by contract address, the amount in USDT, tokens = shares) with "Copy contract address" and "Open Binance Wallet". WARN puts "Read the warning above first" before the steps.
+- Given BLOCK, Then there is no buy button: the next step is to wait, with the reason above.
+- Success: from the empty page to the wallet link in ≤ 3 clicks (Check → pick the issuer → Buy).
+- Outbound requests send `User-Agent: StockGuard/<version> (+repo URL)` followed by the string the skill asks for (`binance-web3/1.x (Skill)`); checked live on 2026-10-10 (RWA list and token audit both answer `000000`).
+- Doc numbers: `scripts/check_numbers.py` recomputes 663/675 and 432/458 from `data/` and the test count from pytest; README, docs, skill, page and demo must match (test).
+
 ## Non-goals
 - No trading strategy, no PnL claims, no perps.
 - No private keys handled by StockGuard (signing stays in the wallet / Agentic Wallet).

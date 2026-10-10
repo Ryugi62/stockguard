@@ -6,6 +6,7 @@ import urllib.parse
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from stockguard.application.service import AmbiguousTicker, TickerNotFound
+from stockguard.domain.next_step import next_step
 
 ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), "..", "web"))   # packaged with stockguard
 CACHE_TTL = 30.0
@@ -44,6 +45,8 @@ def check_response(guard, q, auditor=None):
             r["agent_gate"] = {"action": gt["action"], "reasons": gt["reasons"][:3]}
     except Exception:
         pass
+    r["next_step"] = next_step(r.get("verdict"), r.get("symbol"), r.get("ticker"), r.get("contract"), side,
+                               r.get("usd_amount"), r.get("token_qty") or 0.0, r.get("share_equivalent") or 0.0)
     return 200, r
 
 

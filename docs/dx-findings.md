@@ -8,6 +8,7 @@ Doc references point at the public skill file: https://github.com/binance/binanc
 Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (all tokens) · `python3 scripts/reproduce_findings.py` (seven findings, one screen each, live in ~1 s; `--offline` for the recorded responses)
 
 ## F1. Outside regular hours, stock price × multiplier = token price (not two independent prices)
+- Definition: 432 of 458 = Ondo tokens whose weekend `stockInfo.price × multiplier` equalled `tokenInfo.price` to 1e-6 (2026-10-03 rescan, `data/scan-20261003-weekend.jsonl`).
 - 432 of 458 tokens (427 in the first scan): `stockInfo.price × tokenInfo.sharesMultiplier == tokenInfo.price` to 1e-6.
 - Example NFLXon (`0x7048f5227b032326cc8dbc53cf3fddd947a2c757`): token 670.62353, stock 67.062353, multiplier 10.
 - The skill doc (SKILL.md L473, Stock Info table) says `stockInfo.price` "May be null outside trading hours". It is not null; it is filled with a value derived from the token itself.
@@ -73,6 +74,7 @@ Reproduce: `PYTHONPATH=src python3 -m stockguard scan --out data/scan.jsonl` (al
 
 ## F14. The wallet's mandatory token audit can't see tokenized stocks
 - Reproduce: `curl -X POST https://web3.binance.com/bapi/defi/v1/public/wallet-direct/security/token/audit -H 'Content-Type: application/json' -H 'source: agent' -H 'User-Agent: binance-web3/1.4 (Skill)' -d '{"binanceChainId":"56","contractAddress":"0x7048f5227b032326cc8dbc53cf3fddd947a2c757","requestId":"<uuid4>"}'`
+- Definition: 663 of 675 = stock tokens in the RWA list for which the Token Security Audit returned `hasResult: false` or `isSupported: false` (all three issuers, 2026-10-04, `data/audit-all-20261004.jsonl`).
 - Full run 2026-10-04 05:10–05:15 UTC over all 675 BSC stock tokens (raw `data/audit-all-20261004.jsonl`, `PYTHONPATH=src python3 scripts/audit_sample.py --n 0 --out …`): 663 returned `hasResult: false, isSupported: false, riskLevel: -1` — all 458 Ondo, all 130 xStocks, 75 of 87 bStocks. The 12 bStocks with data (GPROB, RDDTB, CYPHB, AGPUB, AMCB, ZMB, HPEB, ADBEB, SHAZB, FWDIB, PDDB, WENB) were all `riskLevel 0`. USDT returned `hasResult: true, riskLevel: 3` (MEDIUM), last line of the same file.
 - The Agentic Wallet skill (`references/security.md` §1) requires this audit before every `market-order swap` / `limit-order`, and when it is unavailable it requires "explicit user acknowledgment". So every tokenized-stock order an agent places ends in an acknowledgment prompt that carries no information about the stock. StockGuard is built to supply the stock-specific checks that the audit does not cover.
 - The no-data response still carries `riskLevelEnum: "LOW"` next to `riskLevel: -1` (NFLXon, 2026-10-04 and again 2026-10-07 04:42 UTC). The skill's own rule says not to show the level when `hasResult` is false, so a client that reads only `riskLevelEnum` shows "LOW" for a token that was never audited.

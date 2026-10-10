@@ -37,6 +37,14 @@
   .choices { display:grid; gap:8px; margin-top:12px; }
   .choice { background:var(--card); color:var(--ink); border:1px solid var(--line); text-align:left; display:flex; flex-direction:column; gap:2px; }
   .choice span { color:var(--sub); font-size:13px; font-weight:400; }
+  [hidden] { display:none !important; }
+  #next { margin-top:20px; border-top:1px solid var(--line); padding-top:16px; }
+  #next .go { display:block; width:100%; text-align:center; text-decoration:none; }
+  #next ol { padding-left:22px; margin:12px 0 0; }
+  #next .row { display:flex; gap:8px; flex-wrap:wrap; margin-top:12px; }
+  #next .row a, #next .row button { flex:1 1 180px; text-align:center; text-decoration:none; border-radius:12px; padding:12px 14px; font-weight:600; }
+  #next .ghost { background:var(--card); color:var(--ink); border:1px solid var(--line); }
+  #next .wait { font-weight:700; }
 </style>
 </head>
 <body>
@@ -75,6 +83,23 @@ const fmtTime = (ms) => {
   const et = d.toLocaleString("en-US", {timeZone: "America/New_York", weekday: "short", hour: "numeric", minute: "2-digit"});
   const local = d.toLocaleString(undefined, {weekday: "short", hour: "numeric", minute: "2-digit", timeZoneName: "short"});
   return `${et} New York time (${local} for you)`;
+};
+const nextHtml = (n) => {   // UC-11: every verdict ends in one next action
+  if (!n) return "";
+  if (n.kind === "wait") return `<div id="next"><p class="wait">${esc(n.title)}</p><ol>${n.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>`;
+  return `<div id="next"><button type="button" class="go" id="go">${esc(n.button)} →</button>
+    <div id="howto" hidden><ol>${n.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol>
+    <div class="row"><button type="button" class="ghost" id="copy">Copy contract address</button>
+    <a href="${esc(n.wallet_url)}" target="_blank" rel="noopener" id="wallet" style="background:var(--accent);color:#fff">Open Binance Wallet</a></div>
+    ${n.agent_command ? `<p class="muted">Or let StockGuard place it with a signed-in Agentic Wallet: <code>${esc(n.agent_command)}</code></p>` : ""}</div></div>`;
+};
+const wireNext = (n) => {
+  if (!n || n.kind === "wait") return;
+  $("go").addEventListener("click", () => { $("howto").hidden = false; $("go").hidden = true; });
+  $("copy").addEventListener("click", async () => {
+    try { await navigator.clipboard.writeText(n.copy); $("copy").textContent = "Copied ✓"; }
+    catch (e) { $("copy").textContent = n.copy; }
+  });
 };
 api("/api/tickers").then((r) => r.json()).then((xs) => {
   $("tickers").innerHTML = xs.map((x) => `<option value="${esc(x)}">`).join("");
@@ -122,7 +147,9 @@ $("f").addEventListener("submit", async (e) => {
         ${d.agent_gate ? `<p class="trap" style="background:rgba(49,130,246,.10)"><b>If an AI agent placed this order through Binance Agentic Wallet:</b> StockGuard would answer <b>${esc(d.agent_gate.action)}</b>${d.agent_gate.reasons.length ? " — " + d.agent_gate.reasons.map(esc).join(" · ") : "."}</p>` : ""}
         <p class="muted">Token contract on BNB Chain: <code>${esc(d.contract)}</code> (${esc(d.issuer || "")}) — check this address in your wallet before buying. Agents: <code>stockguard gate ${esc(d.symbol)} --usd ${usd}</code></p>
         ${d.attestation_daily ? `<p class="muted">${esc(d.name || d.symbol)} — issuer's <a href="${esc(d.attestation_daily)}" target="_blank" rel="noopener">daily attestation report</a> (proof the tokens are backed by real shares).</p>` : ""}
+        ${nextHtml(d.next_step)}
       </div>`;
+    wireNext(d.next_step);
   } catch (err) {
     $("out").innerHTML = `<div class="card err">${esc(err.message)}</div>`;
   }

@@ -119,14 +119,14 @@ def check_f14(audit: Dict) -> Dict:
 # --- sources ---------------------------------------------------------------------------------------
 
 def _get(url: str) -> Dict:
-    req = urllib.request.Request(url, headers={"User-Agent": "stockguard-reproduce/1.0", "Accept-Encoding": "identity"})
+    req = urllib.request.Request(url, headers={"User-Agent": "StockGuard/0.5 (+https://github.com/Ryugi62/stockguard) reproduce_findings binance-web3/1.1 (Skill)", "Accept-Encoding": "identity"})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode())
 
 
 def _post(url: str, payload: Dict) -> Dict:
     req = urllib.request.Request(url, data=json.dumps(payload).encode(), headers={
-        "Content-Type": "application/json", "source": "agent", "User-Agent": "binance-web3/1.4 (Skill)", "Accept-Encoding": "identity"})
+        "Content-Type": "application/json", "source": "agent", "User-Agent": "StockGuard/0.5 (+https://github.com/Ryugi62/stockguard) reproduce_findings binance-web3/1.4 (Skill)", "Accept-Encoding": "identity"})
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read().decode())
 

@@ -8,6 +8,18 @@ Why it is needed: the Agentic Wallet skill requires a token security audit befor
 
 Covers all three issuers on BNB Chain, read through the Binance Web3 RWA Data API and the Token Security Audit API: **Ondo Global Markets** (`…on`, 458 tokens), **xStocks** (`…x`, 130) and **bStocks** (`…B`, 87).
 
+## What already exists, and what it can't see
+
+| Tool | What it checks | US session · dividend/split pause · token-to-share multiplier |
+|---|---|---|
+| [Blockaid](https://www.blockaid.io/) (MetaMask's security alerts) | simulates a transaction before you sign; scam, drainer and malicious-token warnings | not on its public site (developer docs need a login) |
+| [GoPlus Security](https://docs.gopluslabs.io/reference/response-details.md) | token contract API: honeypot, buy/sell tax, mintable, owner powers, `transfer_pausable` | no — not in its field list (`transfer_pausable` is a contract power, not an issuer's dividend pause) |
+| [Binance Web3 `query-token-audit`](https://github.com/binance/binance-skills-hub/tree/main/skills/binance-web3/query-token-audit) — the audit the Agentic Wallet runs before every swap | contract and trade risk level, honeypot, tax | no such fields; **no data for 663 of 675 stock tokens** |
+| [Binance Web3 `binance-tokenized-securities-info`](https://github.com/binance/binance-skills-hub/tree/main/skills/binance-web3/binance-tokenized-securities-info) | read-only data: market status, asset pauses, multiplier, price | yes, as raw data with no verdict; documented for Ondo only, and the wallet's pre-trade check doesn't call it |
+| [Robinhood](https://robinhood.com/us/en/support/articles/trading-halts/) and other brokers | market hours and exchange halts | yes for hours and halts; no multiplier (one share is one share) |
+
+**What only StockGuard does:** it turns that market data into a verdict (`PROCEED` / `CONFIRM` / `ASK` / `REFUSE`) for all three issuers, in front of the wallet's swap, and catches where the data contradicts itself (two multipliers for one token, a "stock price" pinned to the token price, a last trade days old). Sources checked 2026-10-10: official sites and docs, GitHub, news, store listings and Reddit.
+
 ## Judges: run it in one minute
 
 ```bash
@@ -31,6 +43,14 @@ What the demo shows:
 Every command also takes `--offline`, and `STOCKGUARD_OFFLINE=1` does the same.
 
 **Live, nothing to install: https://ryugi62.github.io/stockguard/** — the same Python package running in your browser (Pyodide) on the live public endpoints; first load takes a few seconds (rebuild: `python3 scripts/build_site.py --out site`). The token audit can't be called from a browser (F18), so that page shows it as unreachable; the CLI calls it.
+
+Three clicks from a question to the wallet: **Check** → pick which NFLX you mean → **Buy $100 of NFLXon** (the steps for exactly that order, the contract address to copy, and a link to Binance Wallet). A `BLOCK` verdict has no buy button.
+
+<p>
+<img src="docs/screenshots/07a-click1-nflx-is-three-tokens.png" width="32%" alt="Click 1: NFLX is three different tokens">
+<img src="docs/screenshots/07b-click2-verdict-and-buy-button.png" width="32%" alt="Click 2: the verdict, what you are really buying, and a Buy button">
+<img src="docs/screenshots/07c-click3-how-to-buy-this-amount.png" width="32%" alt="Click 3: how to buy exactly this amount in Binance Wallet">
+</p>
 
 ## Five ways to use it
 
@@ -59,12 +79,12 @@ StockGuard never signs. `gate` prints the wallet commands; `trade` runs them thr
 | order > wallet `quotaLeft` | `CONFIRM` with the order cut (rounded down) to `quotaLeft`; under $1 left → `REFUSE` | daily limit |
 | the wallet's quote is > 1% / > 5% worse than the token price (`trade`) | `CONFIRM` / stop before the swap. Without `--slippage`, the swap is capped at 1% (not "auto", in `gate` too), and if the user took over 30 s to confirm, it re-quotes first | — |
 
-Each rule follows the official skill text (`binance-skills-hub` commit `9960c675`, `skills/binance-web3/binance-agentic-wallet` v1.12.0 and `query-token-audit`):
+Each rule follows the official skill text (`binance-skills-hub` commit `9960c675`, `skills/binance-web3/binance-agentic-wallet` v1.12.0 and `query-token-audit`). Every quote below is checked word for word against that commit by `scripts/verify_skill_quotes.py` (14 of 14 found, `docs/skill-quotes-check.md`):
 
 | Skill text | What the gate does |
 |---|---|
 | "The same ticker often exists under more than one provider … **do not default to Ondo. Ask the user which provider they mean**" (SKILL.md) | bare ticker with several issuers → `ASK` + the choices with their multipliers |
-| "Before `market-order swap`, `limit-order buy`, or `limit-order sell`, complete the pre-check in security.md" → token audit; "Security audit data is not available for this token on this chain." / "Token security audit is temporarily unavailable." → "Require explicit user acknowledgment" (references/security.md) | calls the public audit API for every BUY (the target is the stock token; a SELL's target is a trusted stablecoin, so step 1 skips it). Unavailable or unreachable → `CONFIRM` with those exact words; `riskLevel` ≥ 4 or tax > 10% → `REFUSE`; the skill's "LOW risk does NOT mean safe" disclaimer is shown verbatim (query-token-audit) |
+| "Before `market-order swap`, `limit-order buy`, or `limit-order sell`, complete the pre-check in security.md" (SKILL.md) → token audit; "Security audit data is not available for this token on this chain." / "Token security audit is temporarily unavailable." → "Require explicit user acknowledgment" (references/security.md) | calls the public audit API for every BUY (the target is the stock token; a SELL's target is a trusted stablecoin, so step 1 skips it). Unavailable or unreachable → `CONFIRM` with those exact words; `riskLevel` ≥ 4 or tax > 10% → `REFUSE`; the skill's "LOW risk does NOT mean safe" disclaimer is shown verbatim (query-token-audit) |
 | "**Fail-closed**: If the security check API is unreachable, inform the user and require acknowledgment" (SKILL.md) | applied to the audit as above. StockGuard applies the same principle to its own market data: if the list or price call fails → `REFUSE` |
 | "**No address hallucination**: Never fabricate a contract address" (SKILL.md) | contract not in the RWA token list → `REFUSE`; the `toToken` address only ever comes from the list |
 | "Confirm with the user each time before any state-changing command" (SKILL.md) | `CONFIRM` can't be skipped |
@@ -96,6 +116,11 @@ Each rule follows the official skill text (`binance-skills-hub` commit `9960c675
 ## What we found on live data
 
 Scans of every BSC stock token: 2026-10-03 (Ondo, 458 tokens, 7.4 s) and 2026-10-04 (all three issuers, 675 tokens, 13.8 s, 0 request errors).
+
+How the two headline numbers are counted:
+- **663 of 675**: stock tokens in the RWA list for which the Token Security Audit returned `hasResult: false` or `isSupported: false` (all three issuers, 2026-10-04, `data/audit-all-20261004.jsonl`).
+- **432 of 458**: Ondo tokens whose weekend `stockInfo.price × multiplier` equalled `tokenInfo.price` to 1e-6 (2026-10-03 rescan, `data/scan-20261003-weekend.jsonl`).
+`python3 scripts/check_numbers.py` recomputes both from the raw files and fails if this page, the docs, the skill or the web page say anything else (it also checks the test count below).
 
 - 432 of 458 Ondo tokens reported a weekend "stock price" exactly equal to the token price ÷ multiplier: the two are pinned together, so premium checks read 0%. The stock quote itself is one feed shared across issuers (identical for 85 of 86 multi-issuer tickers, 2026-10-07); StockGuard lends it to bStocks, which carry none.
 - xStocks and bStocks reported `marketStatus: null` and `reasonCode: TRADING` for all 217 tokens on a Sunday. At the same moment Ondo reported 426 `closed`, 31 `offhours` and 1 `regular` (USDY).
@@ -131,7 +156,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 168 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 179 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

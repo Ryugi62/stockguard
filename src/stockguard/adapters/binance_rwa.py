@@ -17,7 +17,9 @@ PATHS = {
     "dynamic": "/v2/public/wallet-direct/buw/wallet/market/token/rwa/dynamic/ai",
     "kline": "/v1/public/wallet-direct/buw/wallet/dex/market/token/kline/ai",
 }
-HEADERS = {"Accept-Encoding": "identity", "User-Agent": "binance-web3/1.1 (Skill)"}
+# Says who we are first; the skill string after it is what SKILL.md asks every caller to include.
+USER_AGENT = "StockGuard/0.5 (+https://github.com/Ryugi62/stockguard) binance-web3/1.1 (Skill)"
+HEADERS = {"Accept-Encoding": "identity", "User-Agent": USER_AGENT}
 
 
 class RwaError(RuntimeError):
