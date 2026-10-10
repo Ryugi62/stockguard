@@ -145,7 +145,7 @@ $("f").addEventListener("submit", async (e) => {
         <ul>${d.reasons.map((x) => `<li>${esc(plain(x))}</li>`).join("")}</ul>
         ${(d.notes || []).map((x) => `<p class="muted">ℹ︎ ${esc(x)}</p>`).join("")}
         <div class="facts">
-          <div class="fact"><b>${money(usd)} ≈ ${Number(d.token_qty.toPrecision(4))} tokens = ${shareText(d)} ${esc(d.ticker)} shares</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"}</span></div>
+          <div class="fact"><b>${money(usd)} ≈ ${Number(d.token_qty.toPrecision(4))} tokens = ${shareText(d)} ${esc(d.ticker)} shares of exposure</b><span>what you are really ${d.side === "BUY" ? "buying" : "selling"} — the token tracks the share price; it is not a share in your name</span></div>
           <div class="fact"><b>${money(d.token_price)}</b><span>per token (${perShare == null ? "per-share price unclear" : money(perShare) + " per share"}${d.reference_derived ? ", derived from the token price" : ""})</span></div>
           <div class="fact"><b>${esc(SESSION[d.session] || d.session || (d.status === "TRADING" ? "Says trading — no session reported" : "Not reported"))}</b><span>right now</span></div>
           <div class="fact"><b>${d.premium == null ? "Can't tell" : (d.premium * 100).toFixed(2) + "%"}</b><span>${d.premium == null ? "no independent stock price to compare with right now" : "token price vs. the real stock price"}</span></div>
