@@ -242,6 +242,6 @@ def test_tx_lock_stops_before_any_order():
 def test_ondo_limit_order_gets_a_heads_up_and_pre_ipo_tokens_are_refused_by_name():
     from stockguard.application.wallet_gate import gate_swap
     g = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, side="SELL", trigger_share_price=75.0)
-    assert any("Ondo-related tokens cannot be traded" in n and n.startswith("Heads-up") for n in g["notes"])
+    assert g["action"] == "CONFIRM" and any("Ondo-related tokens cannot be traded" in x for x in g["reasons"])
     r = gate_swap(Guard(FakeClient(), to_snapshot), "xOPAI", 100.0)
     assert r["action"] == "REFUSE" and "pre-IPO" in r["reasons"][0]

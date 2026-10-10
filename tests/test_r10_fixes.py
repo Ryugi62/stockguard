@@ -173,3 +173,28 @@ def test_audit_with_an_error_code_is_unavailable():
     from stockguard.adapters.token_audit import parse_audit
     a = parse_audit({"code": "100001", "data": {"hasResult": True, "isSupported": True, "riskLevel": 0}})
     assert a.available is False and "100001" in (a.error or "")
+
+
+def test_ondo_limit_order_needs_an_explicit_yes():
+    from stockguard.application.wallet_gate import gate_swap
+    g = gate_swap(Guard(FakeClient(), to_snapshot), "NFLXon", 100.0, side="SELL", trigger_share_price=75.0)
+    assert g["action"] == "CONFIRM" and any("Ondo-related tokens cannot be traded" in r for r in g["reasons"])
+
+
+def test_audit_error_keeps_the_message():
+    from stockguard.adapters.token_audit import TokenAuditClient
+    def boom(url, payload):
+        raise OSError("HTTP 503 from audit")
+    a = TokenAuditClient(post=boom).audit("0xabc")
+    assert a.available is False and "HTTP 503" in a.error
+
+
+def test_next_step_tells_a_buyer_without_usdt_where_to_get_it():
+    s = next_step("ALLOW", "NFLXB", "NFLX", "0xdef", "BUY", 50.0, 0.7, 0.7)
+    assert any("No USDT" in x for x in s["steps"])
+
+
+def test_risk_badge_bot_box_and_mode_line_are_in_the_developer_view():
+    html = open(os.path.join(ROOT, "src", "stockguard", "web", "index.html"), encoding="utf-8").read()
+    dev = html[html.index("const devHtml"):html.index("const nextHtml")]
+    assert "risk ${d.risk}/100" in dev and "A bot that reads the per-share price" in dev

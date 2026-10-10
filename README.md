@@ -35,7 +35,7 @@ What the demo shows:
 2. `check NFLXon --usd 1000` → `WARN`: the US market is closed and the quoted stock price is derived from the token price itself.
 3. An agent buying NFLXx → `REFUSE` on real data: the API gives two multipliers, and its supply (10,000) disagrees with the chain (100,000). No wallet command is emitted.
 4. KLACon → `CONFIRM` with the `baw` quote and swap commands. The wallet skill's mandatory token audit has no data for this token (or 662 others), so the user has to acknowledge. StockGuard puts its stock warnings into that same confirmation.
-5. "Sell when Netflix hits $75" → `baw limit-order sell --triggerPrice 750.00`. The trigger is per token, and NFLXon is 10 shares, so a $75 trigger would fire immediately. The gate also flags any trigger that is already met. The skill quotes an `Ondo-related tokens cannot be traded` error for limit orders; if the wallet rejects one, `trade` stops and never falls back to a market order.
+5. "Sell when Netflix hits $75" → `baw limit-order sell --triggerPrice 750.00`. The trigger is per token, and NFLXon is 10 shares, so a $75 trigger would fire immediately. The gate also flags any trigger that is already met. The skill quotes an `Ondo-related tokens cannot be traded` error for limit orders, so an Ondo limit order gets `CONFIRM` (an explicit yes), not `PROCEED`; if the wallet rejects one, `trade` stops and never falls back to a market order.
 6. A token paused for a stock split → `REFUSE` (synthetic scenario token).
 7. The wallet's own `quotaLeft` is $250 → the order is cut from $500 to $250.
 8. A wallet quote for 10× the approved SELL (a token/share mix-up, F17; synthetic quote) → `REFUSE` before any swap.
@@ -156,7 +156,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 184 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 188 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

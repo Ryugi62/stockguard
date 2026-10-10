@@ -51,7 +51,7 @@ class TokenAuditClient:
             return parse_audit(self._post(AUDIT_URL, {"binanceChainId": self.chain_id, "contractAddress": address,
                                                       "requestId": str(uuid.uuid4())}))
         except Exception as e:      # skill: unreachable -> tell the user and require acknowledgment
-            return AuditResult(available=False, error=type(e).__name__)
+            return AuditResult(available=False, error=f"{type(e).__name__}: {e}"[:200])
 
 
 class SkippedAudit:

@@ -3,7 +3,7 @@ from typing import Dict, Optional, Protocol
 
 from stockguard.application.service import AmbiguousTicker, Guard, TickerNotFound
 from stockguard.domain.guard import Verdict
-from stockguard.domain.wallet_gate import (ASK, CONFIRM, REFUSE, AuditResult, WalletSettings, decide,
+from stockguard.domain.wallet_gate import (ASK, CONFIRM, PROCEED, REFUSE, AuditResult, WalletSettings, decide,
                                            per_token_trigger)
 
 PAY_TOKENS = ("USDT", "USDC", "USD1", "U", "BNB")   # BSC payment tokens listed in the Agentic Wallet skill
@@ -103,10 +103,11 @@ def gate_swap(guard: Guard, query: str, usd_amount: float, side: str = "BUY", pa
                 action = CONFIRM if action != REFUSE else action
                 reasons = reasons + [f"Limit trigger ${trigger:,.2f} per token is already met (the token trades at "
                                      f"${px:,.2f}) — the order would fire immediately, like a market order"]
-            if str(r["symbol"]).endswith("on"):
-                notes.append("Heads-up to show the user: the wallet skill quotes an `Ondo-related tokens cannot be "
-                             "traded` error for limit orders — this Ondo limit order may be rejected; then stop, don't "
-                             "switch to a market order.")
+            if str(r["symbol"]).endswith("on"):      # the skill expects a rejection: ask before placing it
+                action = CONFIRM if action == PROCEED else action
+                reasons = reasons + ["The wallet skill quotes an `Ondo-related tokens cannot be traded` error for limit "
+                                     "orders — this Ondo limit order may be rejected; if it is, stop, don't switch to a "
+                                     "market order"]
             notes.append(f"Limit order: ${trigger_share_price:,.2f} per {r['ticker']} share = ${trigger:,.2f} per "
                          f"{r['symbol']} token (1 token = {r['multiplier']:.4g} shares). If the wallet rejects the limit "
                          f"order, stop and ask the user — do not fall back to a market order (skill, step 7).")

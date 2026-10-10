@@ -23,8 +23,10 @@ sys.path.insert(0, "/home/pyodide/sg")
 from stockguard.adapters.browser import BrowserApp, pyodide_io
 app = BrowserApp(*pyodide_io())
 `);
-          say("Running in your browser on live Binance Web3 data. The token-audit API does not accept browser requests, " +
-              "so the agent line treats the audit as unreachable (the CLI calls it).");
+          say("Running in your browser on live Binance Web3 data.");
+          const m = document.getElementById("mode");    // the audit detail is for developers (shown in their fold)
+          if (m) m.dataset.dev = "The token-audit API does not accept browser requests, so the agent line here treats " +
+                                 "the audit as unreachable (the CLI calls it).";
           resolve(py);
         } catch (e) { reject(e); }
       };

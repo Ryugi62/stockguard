@@ -6,7 +6,9 @@ def test_gate_exit_codes_follow_the_action(capsys):
     assert main(["gate", "NFLXx", "--usd", "100", "--offline"]) == EXIT["REFUSE"] == 12
     assert main(["gate", "KLACon", "--usd", "1000", "--offline"]) == EXIT["CONFIRM"] == 10
     assert main(["gate", "NFLX", "--usd", "100", "--offline"]) == EXIT["ASK"] == 11
-    assert main(["gate", "NFLXon", "--usd", "200", "--side", "SELL", "--trigger-share-price", "75", "--offline"]) == 0
+    assert main(["gate", "NFLXon", "--usd", "200", "--side", "SELL", "--offline"]) == EXIT["PROCEED"] == 0
+    # an Ondo limit order: the skill expects a rejection, so it needs an explicit yes (R10)
+    assert main(["gate", "NFLXon", "--usd", "200", "--side", "SELL", "--trigger-share-price", "75", "--offline"]) == 10
 
 
 def test_check_exit_codes_follow_the_verdict(capsys):

@@ -86,10 +86,13 @@ const fmtTime = (ms) => {
   return `${et} New York time (${local} for you)`;
 };
 const plain = (s) => String(s).replace(/\s*\([^)]*bp\)/g, "");   // people read the reason; the bp detail stays in the agent view
-const devHtml = (d, usd) => `<details class="dev"><summary>For AI agents and developers</summary>
+const devHtml = (d, usd) => { const naive = Math.abs(d.multiplier - 1) > 0.05 ? usd * d.multiplier : null; return `<details class="dev"><summary>For AI agents and developers</summary>
+  <p class="muted">risk ${d.risk}/100 — ranks warnings, not a probability: halt/pause 100 · earnings 40 · market closed 15 · no independent price 15 · outside regular hours 10 · multiplier up to 30 · premium up to 40</p>
+  ${naive && !d.multiplier_conflict ? `<p class="trap">A bot that reads the per-share price as the token price would have bought <b>${money(naive)}</b> of ${esc(d.ticker)} instead of ${money(usd)}.</p>` : ""}
   ${d.agent_gate ? `<p class="trap" style="background:rgba(49,130,246,.10)"><b>If an AI agent placed this order through Binance Agentic Wallet:</b> StockGuard would answer <b>${esc(d.agent_gate.action)}</b>${d.agent_gate.reasons.length ? " — " + d.agent_gate.reasons.map(esc).join(" · ") : "."}</p>` : ""}
   <ul>${d.reasons.map((x) => `<li>${esc(x)}</li>`).join("")}</ul>
-  <p class="muted">Agents: <code>stockguard gate ${esc(d.symbol)} --usd ${usd}</code>${d.next_step && d.next_step.agent_command ? ` · with a signed-in Agentic Wallet: <code>${esc(d.next_step.agent_command)}</code>` : ""}</p></details>`;
+  <p class="muted">Agents: <code>stockguard gate ${esc(d.symbol)} --usd ${usd}</code>${d.next_step && d.next_step.agent_command ? ` · with a signed-in Agentic Wallet: <code>${esc(d.next_step.agent_command)}</code>` : ""}</p>
+  <p class="muted">${esc(document.getElementById("mode").dataset.dev || "")}</p></details>`; };
 const nextHtml = (n) => {   // UC-11: every verdict ends in one next action
   if (!n) return "";
   if (n.kind === "wait") return `<div id="next"><p class="wait">${esc(n.title)}</p><ol>${n.steps.map((x) => `<li>${esc(x)}</li>`).join("")}</ol></div>`;
@@ -137,7 +140,7 @@ $("f").addEventListener("submit", async (e) => {
     const perShare = d.multiplier && !d.multiplier_conflict ? d.token_price / d.multiplier : null;
     $("out").innerHTML = `
       <div class="card ${d.verdict}">
-        <div class="verdict"><span class="dot"></span>${HEAD[d.verdict]}<span class="risk" title="Ranks warnings, not a probability: halt/pause 100 · earnings 40 · market closed 15 · no independent price 15 · outside regular hours 10 · multiplier up to 30 · premium up to 40">risk ${d.risk}/100</span></div>
+        <div class="verdict"><span class="dot"></span>${HEAD[d.verdict]}</div>
         <ul>${d.reasons.map((x) => `<li>${esc(plain(x))}</li>`).join("")}</ul>
         ${(d.notes || []).map((x) => `<p class="muted">ℹ︎ ${esc(x)}</p>`).join("")}
         <div class="facts">
@@ -147,7 +150,6 @@ $("f").addEventListener("submit", async (e) => {
           <div class="fact"><b>${d.premium == null ? "Can't tell" : (d.premium * 100).toFixed(2) + "%"}</b><span>${d.premium == null ? "no independent stock price to compare with right now" : "token price vs. the real stock price"}</span></div>
         </div>
         ${d.multiplier_conflict ? `<p class="trap">The data feed contradicts itself on this token: the token list says 1 token = ${Number(d.list_multiplier.toPrecision(4))} share(s), the price feed says ${Number(d.multiplier.toPrecision(4))}. Size your order in dollars and check the issuer's terms.</p>` : ""}
-        ${naive && !d.multiplier_conflict ? `<p class="trap">A bot that reads the per-share price as the token price would have bought <b>${money(naive)}</b> of ${esc(d.ticker)} instead of ${money(usd)}.</p>` : ""}
         ${d.onchain_supply ? `<p class="muted">On BNB Chain right now: ${Number(d.onchain_supply.toPrecision(6)).toLocaleString()} ${esc(d.symbol)} tokens in total (read from the token contract). Your order is ${(d.order_share_of_supply * 100).toFixed(2)}% of them — the issuer can mint more, so this is a size check, not market depth.</p>` : ""}
         ${d.next_open_ms && d.session !== "regular" ? `<p class="muted">Next trading session opens around ${esc(fmtTime(d.next_open_ms))}.</p>` : ""}
         <p class="muted">Token contract on BNB Chain: <code>${esc(d.contract)}</code> (${esc(d.issuer || "")}) — check this address in your wallet before buying.</p>

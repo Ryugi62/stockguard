@@ -30,6 +30,7 @@ def next_step(verdict: str, symbol: str, ticker: str, contract: str, side: str, 
     what = f"{_num(token_qty)} tokens = {_num(shares)} {ticker} shares"
     if side == "BUY":
         pay = f"Pay {_usd(usd)} in USDT. You get about {what}." if usd else f"Buy {what}."
+        pay += " No USDT yet? Buy some in the Binance app first, then move it to Binance Wallet."
     else:
         pay = f"Sell about {what} for about {_usd(usd)} in USDT." if usd else f"Sell {what}."
     steps = ["Open Binance Wallet and go to Trade (or Swap) on BNB Chain.",
