@@ -156,7 +156,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 191 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 192 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

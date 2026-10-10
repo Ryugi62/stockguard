@@ -104,10 +104,17 @@ def check_f7(klines: List, others: Optional[Dict[str, List]] = None) -> Dict:
     vols = [str(k[5]) for k in klines if isinstance(k, list) and len(k) > 5]
     zero = sum(1 for v in vols if _f(v) == 0)
     obs = {"NFLXon candles": len(vols), "NFLXon candles with volume 0": zero, "NFLXon close prices move": len({k[4] for k in klines}) > 1}
-    for sym, ks in (others or {}).items():   # xStocks/bStocks candles do carry volume: the gap is Ondo-specific
-        obs[f"{sym} candles with volume > 0"] = sum(1 for k in ks if isinstance(k, list) and len(k) > 5 and (_f(k[5]) or 0) > 0)
+    contrast = []                             # xStocks/bStocks candles do carry volume: the gap is Ondo-specific
+    for sym, ks in (others or {}).items():
+        rows = [k for k in ks if isinstance(k, list) and len(k) > 5]
+        if not rows:                          # e.g. --offline: only Ondo candles were recorded — say so, don't print 0
+            obs[f"{sym} candles with volume > 0"] = "not recorded"
+            continue
+        n = sum(1 for k in rows if (_f(k[5]) or 0) > 0)
+        obs[f"{sym} candles with volume > 0"] = n
+        contrast.append(n > 0)
     return {"observed": obs, "expected": "some volume on Ondo candles whose price moves, as xStocks/bStocks candles have",
-            "reproduced": bool(vols) and zero == len(vols)}
+            "reproduced": bool(vols) and zero == len(vols) and (not contrast or any(contrast))}
 
 
 def check_f14(audit: Dict) -> Dict:

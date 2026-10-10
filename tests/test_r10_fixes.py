@@ -233,3 +233,14 @@ def test_check_with_an_ambiguous_ticker_exits_11_like_gate(capsys):
 def test_page_says_share_exposure_not_shares_owned():
     html = open(os.path.join(ROOT, "src", "stockguard", "web", "index.html"), encoding="utf-8").read()
     assert "shares of exposure" in html
+
+
+def test_f7_offline_without_recorded_candles_says_not_recorded():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("rf", os.path.join(ROOT, "scripts", "reproduce_findings.py"))
+    rf = importlib.util.module_from_spec(spec); spec.loader.exec_module(rf)
+    ondo = [[1, "1", "1", "1", "1", "0"], [2, "1", "1", "1", "2", "0"]]
+    r = rf.check_f7(ondo, {"NFLXx": []})
+    assert r["observed"]["NFLXx candles with volume > 0"] == "not recorded" and r["reproduced"] is True
+    r2 = rf.check_f7(ondo, {"NFLXx": [[1, "1", "1", "1", "1", "0"]]})   # the contrast fails: x candles have no volume
+    assert r2["reproduced"] is False
