@@ -198,3 +198,38 @@ def test_risk_badge_bot_box_and_mode_line_are_in_the_developer_view():
     html = open(os.path.join(ROOT, "src", "stockguard", "web", "index.html"), encoding="utf-8").read()
     dev = html[html.index("const devHtml"):html.index("const nextHtml")]
     assert "risk ${d.risk}/100" in dev and "A bot that reads the per-share price" in dev
+
+
+def test_swap_timeout_is_unknown_not_rejected():
+    import subprocess as sp
+    from test_trade import FakeBaw
+    from stockguard.adapters.agentic_wallet import AgenticWallet, BawRunner
+    from stockguard.application.trade import run_guarded_trade
+    from stockguard.infrastructure.cli import trade_exit_code
+
+    class Slow(FakeBaw):
+        def __call__(self, argv):
+            if " ".join(argv[:2]) == "market-order swap":
+                raise sp.TimeoutExpired("baw", 60)
+            return super().__call__(argv)
+    r = run_guarded_trade(Guard(FakeClient(), to_snapshot), AgenticWallet(BawRunner(run=Slow())), "NFLXon", 5.0,
+                          confirm=lambda s: True, sleep=lambda s: None, today="2026-10-04")
+    assert r["stage"] == "unknown" and "may have been submitted" in r["result"] and "rejected" not in r["result"]
+    assert trade_exit_code(r) == 3          # like "still processing": check before retrying
+
+
+def test_check_with_an_ambiguous_ticker_exits_11_like_gate(capsys):
+    from test_issuers import ThreeIssuers
+    from stockguard.infrastructure import cli
+    import stockguard.infrastructure.cli as c
+    orig = c.build_guard
+    c.build_guard = lambda offline=False: Guard(ThreeIssuers(), to_snapshot)
+    try:
+        assert cli.main(["check", "NFLX", "--offline"]) == 11
+    finally:
+        c.build_guard = orig
+
+
+def test_page_says_share_exposure_not_shares_owned():
+    html = open(os.path.join(ROOT, "src", "stockguard", "web", "index.html"), encoding="utf-8").read()
+    assert "shares of exposure" in html

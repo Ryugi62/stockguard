@@ -62,7 +62,7 @@ Three clicks from a question to the wallet: **Check** → pick which NFLX you me
 | Web page | non-crypto users ("Why can't I buy NFLX right now?") | `stockguard serve` → http://127.0.0.1:8787 |
 | CLI / library | bots, scripts | `stockguard check NFLXon --usd 1000` · `stockguard compare NFLX` (per-issuer terms and per-share prices) |
 
-Exit codes, so scripts and agents can branch without parsing JSON: `gate` 0 PROCEED · 10 CONFIRM · 11 ASK · 12 REFUSE; `check` 0 ALLOW · 10 WARN · 12 BLOCK; `trade` 0 finished or limit placed · 3 still processing · 1 stopped before or at the wallet. 1 also means an error (including an invalid amount); 2 means an unknown flag.
+Exit codes, so scripts and agents can branch without parsing JSON: `gate` 0 PROCEED · 10 CONFIRM · 11 ASK · 12 REFUSE; `check` 0 ALLOW · 10 WARN · 12 BLOCK; `trade` 0 finished or limit placed · 3 still processing, or the wallet did not answer (the order may exist: check `market-order list` before retrying) · 1 stopped before or at the wallet. `check` with a ticker several issuers share exits 11, like `gate`. 1 also means an error (including an invalid amount); 2 means an unknown flag.
 
 ## The Agentic Wallet gate (`src/stockguard/domain/wallet_gate.py`)
 
@@ -156,7 +156,7 @@ A recorded live mainnet trade, and a Transaction API dry-run (that API needs a d
 ## Tests
 
 ```
-python3 -m pytest -q      # 188 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
+python3 -m pytest -q      # 191 tests, offline (fixtures are real recorded responses; `baw` is faked or recorded)
 ```
 
 ## Data source

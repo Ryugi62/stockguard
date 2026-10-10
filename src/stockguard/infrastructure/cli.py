@@ -18,7 +18,7 @@ EXIT = {"PROCEED": 0, "ALLOW": 0, "CONFIRM": 10, "WARN": 10, "ASK": 11, "REFUSE"
 def trade_exit_code(r) -> int:
     if r.get("stage") == "done" and r.get("status") in ("FINISHED", "LIMIT_PLACED"):
         return 0
-    return 3 if r.get("stage") == "pending" else 1
+    return 3 if r.get("stage") in ("pending", "unknown") else 1
 
 
 def _wants_text(a) -> bool:
@@ -126,8 +126,9 @@ def main(argv=None):
             e.candidates = guard.describe(e.candidates)
         except Exception:
             pass
-        sys.exit(e.message() + f" Example: stockguard check {e.candidates[0]['symbol']}  ·  side by side: "
-                               f"stockguard compare {e.query}")
+        print(e.message() + f" Example: stockguard check {e.candidates[0]['symbol']}  ·  side by side: "
+                            f"stockguard compare {e.query}", file=sys.stderr)
+        return EXIT["ASK"]          # same code as `gate` for the same question (11), not a generic error
     except TickerNotFound as e:
         if getattr(e, "reason", None):
             sys.exit(e.reason)

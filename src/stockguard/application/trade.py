@@ -177,6 +177,8 @@ def run_guarded_trade(guard: Guard, wallet: WalletPort, ticker: str, usd_amount:
     try:
         oid = wallet.swap(gate)
     except ValueError as e:
+        if str(e).startswith("TIMEOUT"):   # no answer is not a rejection: the order may exist — never retry blind
+            return {"stage": "unknown", **summary, "result": f"No answer from the wallet — {e}"}
         return {"stage": "swap", **summary, "result": f"The wallet rejected the swap — {e}"}
     status, tx = "PENDING", None
     for _ in range(max_polls):     # an orderId is not a completed swap (market-order.md)

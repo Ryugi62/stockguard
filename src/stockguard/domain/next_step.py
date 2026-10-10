@@ -27,7 +27,7 @@ def next_step(verdict: str, symbol: str, ticker: str, contract: str, side: str, 
                           "Check again when the reason is gone (see the next trading session above, if shown)."]}
     amount = f"{_usd(usd)} of" if usd else f"{_num(token_qty)} tokens of"
     verb = "Buy" if side == "BUY" else "Sell"
-    what = f"{_num(token_qty)} tokens = {_num(shares)} {ticker} shares"
+    what = f"{_num(token_qty)} tokens = {_num(shares)} {ticker} shares of exposure"
     if side == "BUY":
         pay = f"Pay {_usd(usd)} in USDT. You get about {what}." if usd else f"Buy {what}."
         pay += " No USDT yet? Buy some in the Binance app first, then move it to Binance Wallet."
